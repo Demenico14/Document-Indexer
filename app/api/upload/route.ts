@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
 import { supabase } from "@/lib/supabase"
-import { v4 as uuid } from "uuid"
+import { v4 as uuidv4 } from "uuid"
 import { parseExcel, parseCsv, parseXml } from "@/lib/file-parsers"
 
 const prisma = new PrismaClient()
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     console.log("Received file:", file.name, "Size:", file.size, "Type:", file.type)
 
     // Generate a unique filename
-    const fileName = `${uuid()}-${file.name.replace(/\s+/g, "-")}`
+    const fileName = `${uuidv4()}-${file.name.replace(/\s+/g, "-")}`
 
     // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage.from(process.env.SUPABASE_BUCKET!).upload(fileName, file, {
