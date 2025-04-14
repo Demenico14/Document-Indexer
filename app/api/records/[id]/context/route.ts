@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient } from "@prisma/client/default.js"
 import { getRecordContext } from "@/lib/record-context"
 
 const prisma = new PrismaClient()

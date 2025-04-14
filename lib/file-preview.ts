@@ -2,7 +2,7 @@ import * as XLSX from "xlsx"
 import { parse as parseCsvString } from "csv-parse/sync"
 import fs from "fs"
 import path from "path"
-import type { File } from "@prisma/client"
+import type { File } from "@prisma/client/default.js"
 import { supabase } from "@/lib/supabase"
 
 // Update the function signature to accept a sheet parameter

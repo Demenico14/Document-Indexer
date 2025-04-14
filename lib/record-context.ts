@@ -2,7 +2,7 @@ import * as XLSX from "xlsx"
 import { parse as parseCsvString } from "csv-parse/sync"
 import fs from "fs"
 import path from "path"
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient } from "@prisma/client/default.js"
 import { supabase } from "@/lib/supabase"
 
 const prisma = new PrismaClient()
