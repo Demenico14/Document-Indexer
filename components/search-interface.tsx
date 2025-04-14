@@ -12,14 +12,19 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { RecordPreviewModal } from "@/components/record-preview-modal"
-import { generatePdf } from "@/lib/pdf-generator"
-import type { FileRecord } from "@/lib/types"
-import { Badge } from "@/components/ui/badge"
+import { useRouter } from "next/navigation"
 
-interface File {
+interface FileRecord {
   id: string
-  filename: string
+  fileId: string
+  fileName: string
   fileType: string
+  sheetOrNode: string | null
+  fieldName: string
+  fieldValue: string
+  rowNum: number | null
+  parentContext: string | null
+  fullPath: string | null
 }
 
 export function SearchInterface() {
@@ -43,6 +48,7 @@ export function SearchInterface() {
   const { toast } = useToast()
   const [activeSheets, setActiveSheets] = useState<Set<string>>(new Set())
   const [availableSheetsMap, setAvailableSheetsMap] = useState<Record<string, number>>({})
+  const router = useRouter()
 
   const pageSize = 20
 
@@ -174,6 +180,7 @@ export function SearchInterface() {
       }
 
       // Generate PDF
+      const { generatePdf } = await import("@/lib/pdf-generator")
       await generatePdf(recordsToExport, searchTerm)
 
       toast({
@@ -202,7 +209,7 @@ export function SearchInterface() {
     }
 
     // Navigate to the preview tab
-    window.location.href = "/?tab=preview"
+    router.push("/?tab=preview")
   }
 
   // Modify the handleCreateQuotation function to fetch context data before sending to quotation
@@ -253,7 +260,7 @@ export function SearchInterface() {
       console.log(`Sending ${recordsWithContext.length} records with context to quotation system`)
 
       // Navigate to the quotation tab
-      window.location.href = "/?tab=quotation"
+      router.push("/?tab=quotation")
 
       toast({
         title: "Records sent to Quotation",
@@ -378,23 +385,6 @@ export function SearchInterface() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2 md:col-span-3">
-                  <Label>Excel Sheets</Label>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {availableSheets
-                      .filter((sheet) => availableSheetsMap[sheet] > 0)
-                      .map((sheet) => (
-                        <Badge
-                          key={sheet}
-                          variant={activeSheets.has(sheet) ? "default" : "outline"}
-                          className="cursor-pointer"
-                          onClick={() => toggleSheetSelection(sheet)}
-                        >
-                          {sheet} ({availableSheetsMap[sheet] || 0})
-                        </Badge>
-                      ))}
-                  </div>
-                </div>
               </div>
             )}
           </div>
@@ -442,9 +432,6 @@ export function SearchInterface() {
               <div className="bg-muted px-4 py-2 font-medium flex items-center">
                 <FileText className="h-4 w-4 mr-2" />
                 Sheet/Node: {sheetName}
-                <Badge variant="outline" className="ml-2">
-                  {sheetRecords.length} records
-                </Badge>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">

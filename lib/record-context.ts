@@ -3,6 +3,7 @@ import { parse as parseCsvString } from "csv-parse/sync"
 import fs from "fs"
 import path from "path"
 import { PrismaClient } from "@prisma/client"
+import { supabase } from "@/lib/supabase"
 
 const prisma = new PrismaClient()
 
@@ -28,98 +29,65 @@ interface RecordWithFile {
 
 export async function getRecordContext(record: RecordWithFile) {
   try {
-    // First try to find the file in the uploads directory
-    const uploadsPath = path.join(process.cwd(), "uploads")
+    console.log("Getting context for record:", record.id, "from file:", record.file.filename)
 
-    // Make sure the uploads directory exists
-    if (!fs.existsSync(uploadsPath)) {
-      fs.mkdirSync(uploadsPath, { recursive: true })
-    }
+    // First try to download the file from Supabase
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from(process.env.SUPABASE_BUCKET!)
+      .download(record.file.filename)
 
-    const filePath = path.join(uploadsPath, record.file.filename)
+    if (downloadError) {
+      console.error("Error downloading file from Supabase:", downloadError)
 
-    // Log for debugging
-    console.log(`Looking for file at: ${filePath}`)
-    console.log(`File exists: ${fs.existsSync(filePath)}`)
+      // Try to find the file locally as a fallback
+      const uploadsPath = path.join(process.cwd(), "uploads")
 
-    let fileBuffer: Buffer | null = null
-
-    // If file doesn't exist in uploads directory, check temp directory
-    if (!fs.existsSync(filePath)) {
-      const tempDir = path.join(process.cwd(), "tmp")
-      const tempFilePath = path.join(tempDir, record.file.filename)
-
-      console.log(`Looking for file in temp directory: ${tempFilePath}`)
-
-      // Create temp directory if it doesn't exist
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true })
+      // Make sure the uploads directory exists
+      if (!fs.existsSync(uploadsPath)) {
+        fs.mkdirSync(uploadsPath, { recursive: true })
       }
 
-      console.log(`File exists in temp: ${fs.existsSync(tempFilePath)}`)
+      const filePath = path.join(uploadsPath, record.file.filename)
 
-      // If file exists in temp directory, copy it to uploads
-      if (fs.existsSync(tempFilePath)) {
-        fs.copyFileSync(tempFilePath, filePath)
-        console.log(`Copied file from temp to uploads directory`)
-        fileBuffer = fs.readFileSync(filePath)
-      } else {
-        // Try to find the file by original name or any similar file
-        const files = fs.readdirSync(uploadsPath)
-        console.log(`Files in uploads directory: ${files.join(", ")}`)
+      // Log for debugging
+      console.log(`Looking for file locally at: ${filePath}`)
+      console.log(`File exists locally: ${fs.existsSync(filePath)}`)
 
-        // Try to find a file with similar name (case insensitive)
-        const similarFile = files.find(
-          (file) =>
-            file.toLowerCase() === record.file.filename.toLowerCase() ||
-            file.toLowerCase() === record.file.originalName.toLowerCase(),
-        )
-
-        if (similarFile) {
-          console.log(`Found similar file: ${similarFile}`)
-          fileBuffer = fs.readFileSync(path.join(uploadsPath, similarFile))
-        } else {
-          // Check if we can find the file in the database
-          try {
-            const fileRecord = await prisma.file.findUnique({
-              where: { id: record.file.id },
-            })
-
-            if (fileRecord) {
-              // Try to find the file with the database filename
-              const dbFilePath = path.join(uploadsPath, fileRecord.filename)
-              if (fs.existsSync(dbFilePath)) {
-                console.log(`Found file using database filename: ${fileRecord.filename}`)
-                fileBuffer = fs.readFileSync(dbFilePath)
-              }
-            }
-          } catch (dbError) {
-            console.error("Error querying database for file:", dbError)
-          }
-        }
-
-        if (!fileBuffer) {
-          throw new Error(`File not found: ${record.file.filename} (Original name: ${record.file.originalName})`)
-        }
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File not found in Supabase or locally: ${record.file.filename}`)
       }
-    } else {
-      // File exists in the uploads directory
-      fileBuffer = fs.readFileSync(filePath)
+
+      // If file exists locally, read it
+      const fileBuffer = fs.readFileSync(filePath)
+      console.log(`Successfully read local file with size: ${fileBuffer.length} bytes`)
+
+      // Process the file based on its type
+      switch (record.file.fileType.toLowerCase()) {
+        case "xlsx":
+        case "xls":
+        case "csv":
+          return getSpreadsheetContext(fileBuffer, record)
+        case "xml":
+          return getXmlContext(fileBuffer, record)
+        default:
+          throw new Error("Unsupported file type")
+      }
     }
 
-    if (!fileBuffer) {
-      throw new Error("Failed to read file buffer")
-    }
+    // If we successfully downloaded from Supabase, process the file
+    const arrayBuffer = await fileData.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
 
-    console.log(`Successfully read file with size: ${fileBuffer.length} bytes`)
+    console.log(`Successfully downloaded file from Supabase with size: ${buffer.length} bytes`)
 
+    // Process the file based on its type
     switch (record.file.fileType.toLowerCase()) {
       case "xlsx":
       case "xls":
       case "csv":
-        return getSpreadsheetContext(fileBuffer, record)
+        return getSpreadsheetContext(buffer, record)
       case "xml":
-        return getXmlContext(fileBuffer, record)
+        return getXmlContext(buffer, record)
       default:
         throw new Error("Unsupported file type")
     }
@@ -272,7 +240,7 @@ function getCsvRowContext(buffer: Buffer, record: RecordWithFile) {
   }
 }
 
-async function getXmlContext(buffer: Buffer, record: RecordWithFile) {
+function getXmlContext(buffer: Buffer, record: RecordWithFile) {
   try {
     const xmlString = buffer.toString("utf-8")
 

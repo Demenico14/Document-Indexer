@@ -25,11 +25,11 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-  
+
     // Handle nested properties
     if (name.includes(".")) {
       const [parent, child] = name.split(".")
-      
+
       // Make sure we're only updating valid parent objects
       if (parent === "customer") {
         setEditingData({

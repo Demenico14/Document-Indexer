@@ -1,118 +1,142 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { parseExcel, parseCsv, parseXml } from "@/lib/file-parsers"
-import type { ParsedRecord } from "@/lib/types"
+import { NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
-import fs from "fs"
-import path from "path"
+import { supabase } from "@/lib/supabase"
+import { v4 as uuid } from "uuid"
+import { parseExcel, parseCsv, parseXml } from "@/lib/file-parsers"
 
 const prisma = new PrismaClient()
 
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const formData = await request.formData()
-    const files = formData.getAll("files") as File[]
+    // Parse the multipart form data
+    const formData = await req.formData()
+    const file = formData.get("file") as File
 
-    if (!files || files.length === 0) {
-      return NextResponse.json({ error: "No files provided" }, { status: 400 })
+    if (!file) {
+      console.error("No file provided in the request")
+      return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
-    // Ensure uploads directory exists
-    const uploadsDir = path.join(process.cwd(), "uploads")
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true })
+    console.log("Received file:", file.name, "Size:", file.size, "Type:", file.type)
+
+    // Generate a unique filename
+    const fileName = `${uuid()}-${file.name.replace(/\s+/g, "-")}`
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage.from(process.env.SUPABASE_BUCKET!).upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: false,
+    })
+
+    if (uploadError) {
+      console.error("Supabase upload error:", uploadError)
+      return NextResponse.json({ error: uploadError.message }, { status: 500 })
     }
 
-    const results = []
+    // Get the public URL
+    const { data } = supabase.storage.from(process.env.SUPABASE_BUCKET!).getPublicUrl(fileName)
 
-    for (const file of files) {
-      try {
-        const fileBuffer = await file.arrayBuffer()
-        const fileName = file.name
-        const fileType = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase()
+    // Determine file type from extension
+    const fileExtension = file.name.split(".").pop()?.toLowerCase() || ""
+    let fileType = "unknown"
 
-        // Generate a unique filename
-        const uniqueFilename = `${path.basename(fileName, `.${fileType}`)}-${Date.now()}.${fileType}`
+    if (["xlsx", "xls"].includes(fileExtension)) {
+      fileType = "xlsx"
+    } else if (fileExtension === "csv") {
+      fileType = "csv"
+    } else if (fileExtension === "xml") {
+      fileType = "xml"
+    }
 
-        // Create file record
-        const fileRecord = await prisma.file.create({
-          data: {
-            filename: uniqueFilename,
-            fileType: fileType,
-            originalName: fileName,
-            uploadedAt: new Date(),
-            rowCount: 0, // Will update after parsing
-          },
-        })
+    // Store file metadata in database
+    const fileRecord = await prisma.file.create({
+      data: {
+        filename: fileName,
+        originalName: file.name,
+        fileType: fileType,
+        rowCount: 0,
+      },
+    })
 
-        // Save the file to disk
-        const filePath = path.join(uploadsDir, uniqueFilename)
-        fs.writeFileSync(filePath, Buffer.from(fileBuffer))
-        console.log(`File saved to: ${filePath}`)
+    // Download the file from Supabase to parse it
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from(process.env.SUPABASE_BUCKET!)
+      .download(fileName)
 
-        // Parse file based on type
-        let parsedRecords: ParsedRecord[] = []
-        let rowCount = 0
+    if (downloadError) {
+      console.error("Error downloading file from Supabase:", downloadError)
+      return NextResponse.json({
+        success: true,
+        file: fileRecord,
+        url: data.publicUrl,
+        warning: "File uploaded but could not be parsed",
+      })
+    }
 
-        try {
-          if (fileType === "xlsx" || fileType === "xls") {
-            const result = await parseExcel(fileBuffer, fileRecord.id)
-            parsedRecords = result.records
-            rowCount = result.rowCount
-          } else if (fileType === "csv") {
-            const result = await parseCsv(fileBuffer, fileRecord.id)
-            parsedRecords = result.records
-            rowCount = result.rowCount
-          } else if (fileType === "xml") {
-            const result = await parseXml(fileBuffer, fileRecord.id)
-            parsedRecords = result.records
-            rowCount = result.rowCount
-          } else {
-            throw new Error("Unsupported file type")
-          }
-        } catch (parseError) {
-          console.error(`Error parsing file ${fileName}:`, parseError)
-          // Continue with empty records rather than failing the whole upload
-          parsedRecords = []
-          rowCount = 0
-        }
+    // Parse the file based on its type
+    let parseResult
+    try {
+      const arrayBuffer = await fileData.arrayBuffer()
 
-        // Insert parsed records in batches
-        if (parsedRecords.length > 0) {
-          try {
-            // Insert in batches of 1000
-            const batchSize = 1000
-            for (let i = 0; i < parsedRecords.length; i += batchSize) {
-              const batch = parsedRecords.slice(i, i + batchSize)
-              await prisma.parsedRecord.createMany({
-                data: batch,
-              })
-            }
-          } catch (dbError) {
-            console.error(`Error inserting records for ${fileName}:`, dbError)
-          }
-        }
-
-        // Update file record with row count
-        await prisma.file.update({
-          where: { id: fileRecord.id },
-          data: { rowCount },
-        })
-
-        results.push({
-          id: fileRecord.id,
-          filename: fileRecord.filename,
-          originalName: fileRecord.originalName,
-          recordCount: parsedRecords.length,
-        })
-      } catch (fileError) {
-        console.error(`Error processing file ${file.name}:`, fileError)
-        // Continue with next file rather than failing the whole upload
+      if (fileType === "xlsx") {
+        parseResult = await parseExcel(arrayBuffer, fileRecord.id)
+      } else if (fileType === "csv") {
+        parseResult = await parseCsv(arrayBuffer, fileRecord.id)
+      } else if (fileType === "xml") {
+        parseResult = await parseXml(arrayBuffer, fileRecord.id)
+      } else {
+        throw new Error("Unsupported file type")
       }
-    }
 
-    return NextResponse.json({ success: true, files: results })
-  } catch (error) {
-    console.error("Error processing upload:", error)
-    return NextResponse.json({ error: "Failed to process upload" }, { status: 500 })
+      // Update the file record with the row count
+      await prisma.file.update({
+        where: { id: fileRecord.id },
+        data: { rowCount: parseResult.rowCount },
+      })
+
+      // Store the parsed records in the database
+      if (parseResult.records.length > 0) {
+        // Convert records to the format expected by Prisma
+        const recordsToCreate = parseResult.records.map((record: any) => ({
+          fileId: record.fileId,
+          sheetOrNode: record.sheetOrNode,
+          fieldName: record.fieldName,
+          fieldValue: record.fieldValue,
+          rowNum: record.rowNum,
+          parentContext: record.parentContext,
+          fullPath: record.fullPath,
+        }))
+
+        await prisma.parsedRecord.createMany({
+          data: recordsToCreate,
+        })
+      }
+
+      return NextResponse.json({
+        success: true,
+        file: {
+          ...fileRecord,
+          rowCount: parseResult.rowCount,
+        },
+        url: data.publicUrl,
+        recordsCount: parseResult.records.length,
+      })
+    } catch (parseError: any) {
+      console.error("Error parsing file:", parseError)
+      return NextResponse.json({
+        success: true,
+        file: fileRecord,
+        url: data.publicUrl,
+        warning: `File uploaded but could not be parsed: ${parseError.message}`,
+      })
+    }
+  } catch (error: any) {
+    console.error("Upload error:", error)
+    return NextResponse.json(
+      {
+        error: error.message || "Failed to process upload",
+      },
+      { status: 500 },
+    )
   }
 }

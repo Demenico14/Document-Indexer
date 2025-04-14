@@ -1,9 +1,20 @@
 import * as XLSX from "xlsx"
 import { parse as parseCsvString } from "csv-parse/sync"
 import { XMLParser } from "fast-xml-parser"
-import type { ParsedRecord } from "./types"
 import fs from "fs"
 import path from "path"
+
+// Define the ParsedRecord type inline to avoid import issues
+type ParsedRecord = {
+  id: string
+  fileId: string
+  sheetOrNode: string | null
+  fieldName: string
+  fieldValue: string
+  rowNum: number | null
+  parentContext: string | null
+  fullPath: string | null
+}
 
 // Add this helper function at the top of the file
 function logParsingError(fileType: string, error: any, details?: any) {
@@ -33,24 +44,20 @@ Details: ${JSON.stringify(details, null, 2)}
 export async function parseExcel(buffer: ArrayBuffer, fileId: string) {
   try {
     const data = new Uint8Array(buffer)
-    const workbook = XLSX.read(data, { type: "array", cellStyles: true, cellDates: true, cellNF: true, cellHTML: true })
+    const workbook = XLSX.read(data, { type: "array" })
 
-    const records: ParsedRecord[] = []
+    const records: any[] = []
     let totalRows = 0
-    let imageCount = 0
 
     // Process each sheet
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName]
 
-      // Check if sheet has images or other objects
-      const hasObjects = sheet["!objects"] && sheet["!objects"].length > 0
-
       // Get the sheet range
       const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1")
 
       // Convert to JSON with headers
-      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, blankrows: false })
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null })
 
       if (json.length === 0) continue
 
@@ -67,31 +74,6 @@ export async function parseExcel(buffer: ArrayBuffer, fileId: string) {
         parentContext: null,
         fullPath: `/${sheetName}`,
       })
-
-      // Add sheet range metadata
-      records.push({
-        fileId,
-        sheetOrNode: sheetName,
-        fieldName: "_sheetRange",
-        fieldValue: `${range.s.r + 1}:${range.e.r + 1}`,
-        rowNum: 0,
-        parentContext: null,
-        fullPath: `/${sheetName}/range`,
-      })
-
-      // Add sheet has objects metadata
-      if (hasObjects) {
-        records.push({
-          fileId,
-          sheetOrNode: sheetName,
-          fieldName: "_hasObjects",
-          fieldValue: "true",
-          rowNum: 0,
-          parentContext: null,
-          fullPath: `/${sheetName}/objects`,
-        })
-        imageCount++
-      }
 
       // Process each row
       for (let rowIndex = 1; rowIndex < json.length; rowIndex++) {
@@ -124,10 +106,6 @@ export async function parseExcel(buffer: ArrayBuffer, fileId: string) {
       totalRows += json.length - 1 // Subtract header row
     }
 
-    console.log(
-      `Parsed Excel file with ${workbook.SheetNames.length} sheets, ${totalRows} total rows, and ${imageCount} sheets with objects/images`,
-    )
-
     return { records, rowCount: totalRows }
   } catch (error) {
     logParsingError("excel", error, { fileId })
@@ -148,7 +126,7 @@ export async function parseCsv(buffer: ArrayBuffer, fileId: string) {
       trim: true,
     })
 
-    const records: ParsedRecord[] = []
+    const records: any[] = []
 
     // Process each row
     parsed.forEach((row: any, index: number) => {
@@ -191,7 +169,7 @@ export async function parseXml(buffer: ArrayBuffer, fileId: string) {
     })
 
     const parsed = parser.parse(xmlString)
-    const records: ParsedRecord[] = []
+    const records: any[] = []
 
     // Track all top-level nodes to use as "sheets"
     const topLevelNodes = new Set<string>()

@@ -6,7 +6,20 @@ import { File, AlertTriangle, Download, Quote, FileText } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import type { FileRecord } from "@/lib/types"
+import { useRouter } from "next/navigation"
+
+interface FileRecord {
+  id: string
+  fileId: string
+  fileName: string
+  fileType: string
+  sheetOrNode: string | null
+  fieldName: string
+  fieldValue: string
+  rowNum: number | null
+  parentContext: string | null
+  fullPath: string | null
+}
 
 export function FilePreview() {
   const [activeTab, setActiveTab] = useState("placeholder")
@@ -16,6 +29,7 @@ export function FilePreview() {
   const [loadingContexts, setLoadingContexts] = useState<Set<string>>(new Set())
   const [exportLoading, setExportLoading] = useState(false)
   const { toast } = useToast()
+  const router = useRouter()
 
   useEffect(() => {
     // Load selected records from localStorage
@@ -111,7 +125,7 @@ export function FilePreview() {
       console.log(`Sending ${recordsWithContext.length} records with context to quotation system from preview`)
 
       // Navigate to the quotation tab
-      window.location.href = "/?tab=quotation"
+      router.push("/?tab=quotation")
 
       toast({
         title: "Records sent to Quotation",
@@ -259,7 +273,7 @@ export function FilePreview() {
             yPos = 20
           }
           doc.text(line, 14, yPos)
-          yPos += 5
+          yPos += 4
         })
       } else if (recordContexts[recordId]?.rowData) {
         // For spreadsheets, add a table of the row data
