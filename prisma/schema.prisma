@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model File {
+  id           String         @id @default(uuid())
+  filename     String         @unique
+  fileType     String
+  originalName String
+  uploadedAt   DateTime       @default(now())
+  rowCount     Int            @default(0)
+  parsedRecords ParsedRecord[]
+}
+
+model ParsedRecord {
+  id            String   @id @default(uuid())
+  fileId        String
+  file          File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  sheetOrNode   String
+  fieldName     String
+  fieldValue    String
+  rowNum        Int?
+  parentContext String?
+  fullPath      String?
+  
+  @@index([fileId])
+  @@index([fieldName])
+  @@index([fieldValue])
+  @@index([sheetOrNode])
+}
+
