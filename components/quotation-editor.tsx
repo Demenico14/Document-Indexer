@@ -25,25 +25,32 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-
+  
     // Handle nested properties
     if (name.includes(".")) {
       const [parent, child] = name.split(".")
-      setEditingData({
-        ...editingData,
-        [parent]: {
-          ...editingData[parent as keyof QuotationData],
-          [child]: value,
-        },
-      })
+      
+      // Make sure we're only updating valid parent objects
+      if (parent === "customer") {
+        setEditingData({
+          ...editingData,
+          customer: {
+            ...editingData.customer,
+            [child]: value,
+          },
+        })
+      } else {
+        // Handle other potential nested objects here if needed
+        console.warn(`Unhandled nested property: ${name}`)
+      }
     } else {
+      // For top-level properties
       setEditingData({
         ...editingData,
         [name]: value,
       })
     }
   }
-
   const handleLineItemChange = (index: number, field: keyof LineItem, value: string | number) => {
     const updatedItems = [...editingData.lineItems]
 

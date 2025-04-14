@@ -36,7 +36,7 @@ export function FileList() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch files ",
+        description: "Failed to fetch files",
         variant: "destructive",
       })
     } finally {
