@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client/default.js"
+import { PrismaClient } from "@prisma/client"
 import fs from "fs"
 import path from "path"
 import * as XLSX from "xlsx"

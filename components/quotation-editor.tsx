@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { Plus, Trash2, GripVertical } from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { calculateTotals } from "@/lib/quotation-utils"
+import { AddItemModal } from "@/components/add-item-modal"
 import type { QuotationData, LineItem } from "@/lib/types"
 
 interface QuotationEditorProps {
@@ -22,6 +23,7 @@ interface QuotationEditorProps {
 
 export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLineItems }: QuotationEditorProps) {
   const [editingData, setEditingData] = useState<QuotationData>(quotationData)
+  const [showAddItemModal, setShowAddItemModal] = useState(false)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -51,6 +53,7 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
       })
     }
   }
+
   const handleLineItemChange = (index: number, field: keyof LineItem, value: string | number) => {
     const updatedItems = [...editingData.lineItems]
 
@@ -73,44 +76,40 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
     }
 
     // Recalculate totals
-    const { subtotal, taxAmount, totalAmount } = calculateTotals(updatedItems, editingData.taxRate)
+    const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
 
     setEditingData({
       ...updatedData,
       subtotal,
-      taxAmount,
+      markupAmount,
       totalAmount,
     })
 
     onUpdateQuotation({
       ...updatedData,
       subtotal,
-      taxAmount,
+      markupAmount,
       totalAmount,
     })
   }
 
-  const handleAddLineItem = () => {
+  const handleAddItem = (newItemData: Omit<LineItem, "id" | "no">) => {
     const newItem: LineItem = {
       id: `item-${Date.now()}`,
       no: editingData.lineItems.length + 1,
-      description: "",
-      quantity: 1,
-      unit: "Each",
-      price: 0,
-      total: 0,
+      ...newItemData,
     }
 
     const updatedItems = [...editingData.lineItems, newItem]
 
     // Recalculate totals
-    const { subtotal, taxAmount, totalAmount } = calculateTotals(updatedItems, editingData.taxRate)
+    const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
 
     const updatedData = {
       ...editingData,
       lineItems: updatedItems,
       subtotal,
-      taxAmount,
+      markupAmount,
       totalAmount,
     }
 
@@ -128,13 +127,13 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
     })
 
     // Recalculate totals
-    const { subtotal, taxAmount, totalAmount } = calculateTotals(updatedItems, editingData.taxRate)
+    const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
 
     const updatedData = {
       ...editingData,
       lineItems: updatedItems,
       subtotal,
-      taxAmount,
+      markupAmount,
       totalAmount,
     }
 
@@ -225,14 +224,17 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="taxRate">Tax Rate (%)</Label>
+              <Label htmlFor="markupRate">Markup Rate (%)</Label>
               <Input
-                id="taxRate"
-                name="taxRate"
+                id="markupRate"
+                name="markupRate"
                 type="number"
-                value={editingData.taxRate}
+                value={editingData.markupRate}
                 onChange={handleInputChange}
               />
+              <p className="text-xs text-muted-foreground">
+                The markup is applied to the subtotal and is not shown on the quotation.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -316,7 +318,7 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
               <CardTitle>Line Items</CardTitle>
               <CardDescription>Products and services in this quotation</CardDescription>
             </div>
-            <Button onClick={handleAddLineItem}>
+            <Button onClick={() => setShowAddItemModal(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Add Item
             </Button>
@@ -429,12 +431,7 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
                   {editingData.currency} {editingData.subtotal.toFixed(2)}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm">Tax ({editingData.taxRate}%):</span>
-                <span className="font-medium">
-                  {editingData.currency} {editingData.taxAmount.toFixed(2)}
-                </span>
-              </div>
+              {/* Markup is hidden from the UI */}
               <Separator />
               <div className="flex justify-between">
                 <span className="font-medium">Total:</span>
@@ -443,6 +440,13 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
                 </span>
               </div>
             </div>
+          </div>
+
+          <div className="mt-4 text-xs text-muted-foreground">
+            <p>
+              Note: The price shown for each item is the base price before markup. The markup ({editingData.markupRate}
+              %) is applied to the subtotal to calculate the final total.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -499,6 +503,8 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
           Save Quotation
         </Button>
       </div>
+
+      <AddItemModal isOpen={showAddItemModal} onClose={() => setShowAddItemModal(false)} onAddItem={handleAddItem} />
     </div>
   )
 }

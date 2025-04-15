@@ -6,7 +6,7 @@ export const initialQuotationData: QuotationData = {
   validUntil: "2025-04-21",
   salesEmployee: "Tafadzwa Gwena",
   currency: "USD",
-  taxRate: 15,
+  markupRate: 15, // Changed from taxRate to markupRate
   customer: {
     name: "Ncube Burrow Engineering",
     address: "19 Churchill Road\nAlexandra Park\nHarare\nZIMBABWE",
@@ -52,7 +52,7 @@ export const initialQuotationData: QuotationData = {
   bankDetails:
     "Account Name: Distitron Investments\nBank Name: Nedbank\nAccount Number: 11991013530\nBranch: Borrowdale",
   subtotal: 104.35,
-  taxAmount: 15.65,
+  markupAmount: 15.65, // Changed from taxAmount to markupAmount
   totalAmount: 120.0,
 }
 

@@ -41,7 +41,7 @@ export interface QuotationData {
   validUntil: string
   salesEmployee: string
   currency: string
-  taxRate: number
+  markupRate: number // Changed from taxRate to markupRate
   customer: Customer
   lineItems: LineItem[]
   notes: string
@@ -49,7 +49,7 @@ export interface QuotationData {
   remarks: string
   bankDetails: string
   subtotal: number
-  taxAmount: number
+  markupAmount: number // Changed from taxAmount to markupAmount
   totalAmount: number
 }
 

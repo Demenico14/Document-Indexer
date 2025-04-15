@@ -100,17 +100,14 @@ export function QuotationPreview({ quotationData, companyData }: QuotationPrevie
       </div>
 
       {/* Totals */}
-      <div className="flex justify-en mb-8">
+      <div className="flex justify-end mb-8">
         <div className="w-64">
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="font-medium">Subtotal</div>
             <div className="text-right">
               {quotationData.currency} {quotationData.subtotal.toFixed(2)}
             </div>
-            <div className="font-medium">Tax Amount</div>
-            <div className="text-right">
-              {quotationData.currency} {quotationData.taxAmount.toFixed(2)}
-            </div>
+            {/* Markup is hidden from the UI */}
             <div className="font-bold text-lg">Total Amount</div>
             <div className="text-right font-bold text-lg">
               {quotationData.currency} {quotationData.totalAmount.toFixed(2)}

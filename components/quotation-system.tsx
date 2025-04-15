@@ -101,15 +101,15 @@ export function QuotationSystem() {
 
           // Calculate totals
           const subtotal = newLineItems.reduce((sum, item) => sum + item.total, 0)
-          const taxAmount = subtotal * (quotationData.taxRate / 100)
-          const totalAmount = subtotal + taxAmount
+          const markupAmount = subtotal * (quotationData.markupRate / 100)
+          const totalAmount = subtotal + markupAmount
 
           // Create a new quotation with these line items
           const newQuotationData = {
             ...quotationData,
             lineItems: newLineItems,
             subtotal,
-            taxAmount,
+            markupAmount,
             totalAmount,
           }
 
