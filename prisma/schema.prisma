@@ -36,3 +36,4 @@ model ParsedRecord {
   @@index([fieldValue])
   @@index([sheetOrNode])
 }
+
