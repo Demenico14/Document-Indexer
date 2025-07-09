@@ -70,4 +70,55 @@ export interface LineItem {
   unit: string
   price: number
   total: number
+  category?: string
+  brand?: string
+  model?: string
+  specs?: {
+    display?: string
+    processor?: string
+    storage?: string
+    graphics?: string
+    connectivity?: string
+    security?: string
+    battery?: string
+    memory?: string
+    camera?: string
+    audio?: string
+    dimensions?: string
+    weight?: string
+    operatingSystem?: string
+    ports?: string
+    wireless?: string
+    [key: string]: string | undefined
+  }
+}
+
+export interface TechSpecs {
+  display?: string
+  processor?: string
+  storage?: string
+  graphics?: string
+  connectivity?: string
+  security?: string
+  battery?: string
+  memory?: string
+  camera?: string
+  audio?: string
+  dimensions?: string
+  weight?: string
+  operatingSystem?: string
+  ports?: string
+  wireless?: string
+  [key: string]: string | undefined
+}
+
+export interface ExtractedProduct {
+  name?: string
+  model?: string
+  brand?: string
+  price?: number
+  currency?: string
+  specs: TechSpecs
+  category?: string
+  description?: string
 }

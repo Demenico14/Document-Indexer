@@ -6,15 +6,25 @@ import { QuotationEditor } from "@/components/quotation-editor"
 import { QuotationPreview } from "@/components/quotation-preview"
 import { CompanyDataEditor } from "@/components/company-data-editor"
 import { Button } from "@/components/ui/button"
-import { Download, FileText, Settings } from "lucide-react"
+import { Download, FileText, Settings, Zap } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { jsPDF } from "jspdf"
 import html2canvas from "html2canvas"
 import { initialQuotationData, initialCompanyData } from "@/lib/initial-data"
+import { extractTechSpecs, createStructuredLineItems } from "@/lib/tech-spec-extractor"
 import type { QuotationData, CompanyData, LineItem, FileRecord } from "@/lib/types"
 
-// Update the convertRecordsToLineItems function to use context data
+// Update the convertRecordsToLineItems function to use intelligent extraction
 function convertRecordsToLineItems(records: FileRecord[]) {
+  // First, try to extract structured technical specifications
+  const extractedProducts = extractTechSpecs(records)
+
+  if (extractedProducts.length > 0) {
+    console.log("Extracted structured products:", extractedProducts)
+    return createStructuredLineItems(extractedProducts)
+  }
+
+  // Fallback to the original method if no structured data found
   return records.map((record, index) => {
     // Create a description based on the record and its context
     let description = `${record.fieldName}: ${record.fieldValue}`
@@ -104,6 +114,7 @@ export function QuotationSystem() {
   const [companyData, setCompanyData] = useState<CompanyData>(initialCompanyData)
   const [activeTab, setActiveTab] = useState("edit")
   const [showCompanyEditor, setShowCompanyEditor] = useState(false)
+  const [isIntelligentMode, setIsIntelligentMode] = useState(true)
   const { toast } = useToast()
 
   // Update the useEffect to use the enhanced convertRecordsToLineItems function
@@ -118,7 +129,7 @@ export function QuotationSystem() {
         console.log(`Found ${records.length} records in localStorage`)
 
         if (records.length > 0) {
-          // Convert records to line items
+          // Convert records to line items using intelligent extraction
           const newLineItems = convertRecordsToLineItems(records)
           console.log(`Converted to ${newLineItems.length} line items`)
 
@@ -142,9 +153,14 @@ export function QuotationSystem() {
           // Clear the stored records to avoid reloading them on refresh
           localStorage.removeItem("quotationRecords")
 
+          // Check if we used intelligent extraction
+          const hasStructuredData = newLineItems.some((item) => item.specs && Object.keys(item.specs).length > 0)
+
           toast({
-            title: "Records Imported",
-            description: `${records.length} records imported from Document Indexer with context data`,
+            title: hasStructuredData ? "Smart Import Complete!" : "Records Imported",
+            description: hasStructuredData
+              ? `${records.length} records intelligently processed with technical specifications`
+              : `${records.length} records imported from Document Indexer with context data`,
           })
         }
       } catch (error) {
@@ -225,8 +241,16 @@ export function QuotationSystem() {
         <div className="flex items-center space-x-2">
           <FileText className="h-6 w-6" />
           <h1 className="text-3xl font-bold tracking-tight">Quotation System</h1>
+          {isIntelligentMode && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+              <Zap className="h-3 w-3" />
+              Smart Mode
+            </div>
+          )}
         </div>
-        <p className="text-muted-foreground">Create, edit and export professional sales quotations</p>
+        <p className="text-muted-foreground">
+          Create, edit and export professional sales quotations with intelligent specification extraction
+        </p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

@@ -2,17 +2,34 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
-import { Plus, Trash2, GripVertical, Calendar, User, Building, Mail, Phone } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import {
+  Plus,
+  Trash2,
+  GripVertical,
+  Calendar,
+  User,
+  Building,
+  Mail,
+  Phone,
+  Save,
+  Check,
+  Cpu,
+  Monitor,
+  HardDrive,
+  Zap,
+} from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { calculateTotals } from "@/lib/quotation-utils"
 import { AddItemModal } from "@/components/add-item-modal"
+import { useToast } from "@/hooks/use-toast"
 import type { QuotationData, LineItem } from "@/lib/types"
 
 interface QuotationEditorProps {
@@ -24,9 +41,19 @@ interface QuotationEditorProps {
 export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLineItems }: QuotationEditorProps) {
   const [editingData, setEditingData] = useState<QuotationData>(quotationData)
   const [showAddItemModal, setShowAddItemModal] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const { toast } = useToast()
+
+  // Update editingData when quotationData prop changes
+  useEffect(() => {
+    setEditingData(quotationData)
+    setHasUnsavedChanges(false)
+  }, [quotationData])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    let updatedData = { ...editingData }
 
     // Handle nested properties
     if (name.includes(".")) {
@@ -34,24 +61,31 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
 
       // Make sure we're only updating valid parent objects
       if (parent === "customer") {
-        setEditingData({
+        updatedData = {
           ...editingData,
           customer: {
             ...editingData.customer,
             [child]: value,
           },
-        })
+        }
       } else {
         // Handle other potential nested objects here if needed
         console.warn(`Unhandled nested property: ${name}`)
+        return
       }
     } else {
       // For top-level properties
-      setEditingData({
+      updatedData = {
         ...editingData,
         [name]: value,
-      })
+      }
     }
+
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
+
+    // Auto-update the preview with changes
+    onUpdateQuotation(updatedData)
   }
 
   const handleLineItemChange = (index: number, field: keyof LineItem, value: string | number) => {
@@ -78,19 +112,18 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
     // Recalculate totals
     const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
 
-    setEditingData({
+    const finalUpdatedData = {
       ...updatedData,
       subtotal,
       markupAmount,
       totalAmount,
-    })
+    }
 
-    onUpdateQuotation({
-      ...updatedData,
-      subtotal,
-      markupAmount,
-      totalAmount,
-    })
+    setEditingData(finalUpdatedData)
+    setHasUnsavedChanges(true)
+
+    // Auto-update the preview with changes
+    onUpdateQuotation(finalUpdatedData)
   }
 
   const handleAddItem = (newItemData: Omit<LineItem, "id" | "no">) => {
@@ -114,6 +147,7 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
     }
 
     setEditingData(updatedData)
+    setHasUnsavedChanges(true)
     onUpdateQuotation(updatedData)
   }
 
@@ -138,6 +172,7 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
     }
 
     setEditingData(updatedData)
+    setHasUnsavedChanges(true)
     onUpdateQuotation(updatedData)
   }
 
@@ -153,24 +188,69 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
       item.no = idx + 1
     })
 
-    setEditingData({
+    const updatedData = {
       ...editingData,
       lineItems: items,
-    })
+    }
 
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
     onReorderLineItems(items)
+    onUpdateQuotation(updatedData)
   }
 
-  const handleSave = () => {
-    onUpdateQuotation(editingData)
+  const handleSave = async () => {
+    setIsSaving(true)
+
+    try {
+      // Simulate save operation
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      onUpdateQuotation(editingData)
+      setHasUnsavedChanges(false)
+
+      toast({
+        title: "Quotation Saved",
+        description: "Your quotation has been saved successfully.",
+      })
+    } catch (error) {
+      toast({
+        title: "Save Failed",
+        description: "There was an error saving your quotation. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const getSpecIcon = (specType: string) => {
+    switch (specType) {
+      case "processor":
+        return <Cpu className="h-3 w-3" />
+      case "display":
+        return <Monitor className="h-3 w-3" />
+      case "storage":
+        return <HardDrive className="h-3 w-3" />
+      case "battery":
+        return <Zap className="h-3 w-3" />
+      default:
+        return null
+    }
   }
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto p-6">
-      {/* Header Section */}
+      {/* Header Section with Save Status */}
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold text-gray-900">Quotation Editor</h1>
         <p className="text-gray-600">Create and customize your sales quotation</p>
+        {hasUnsavedChanges && (
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
+            <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+            Changes are being auto-saved to preview
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -429,100 +509,139 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
                       </div>
                     </div>
                   ) : (
-                    <div className="border rounded-lg overflow-hidden shadow-sm">
-                      <div className="grid grid-cols-12 gap-2 bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
-                        <div className="col-span-1"></div>
-                        <div className="col-span-1">No.</div>
-                        <div className="col-span-4">Description</div>
-                        <div className="col-span-1">Qty</div>
-                        <div className="col-span-1">Unit</div>
-                        <div className="col-span-2">Price</div>
-                        <div className="col-span-2">Total</div>
-                      </div>
-
+                    <div className="space-y-4">
                       {editingData.lineItems.map((item, index) => (
                         <Draggable key={item.id} draggableId={item.id} index={index}>
                           {(provided, snapshot) => (
-                            <div
+                            <Card
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              className={`grid grid-cols-12 gap-2 px-4 py-4 border-t items-center transition-colors ${
-                                snapshot.isDragging ? "bg-blue-50 shadow-lg" : "bg-white hover:bg-gray-50"
+                              className={`transition-all duration-200 ${
+                                snapshot.isDragging ? "shadow-lg scale-105 rotate-2" : "hover:shadow-md"
                               }`}
                             >
-                              <div className="col-span-1 flex items-center">
-                                <div {...provided.dragHandleProps} className="cursor-grab hover:cursor-grabbing">
-                                  <GripVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                              <CardContent className="p-6">
+                                <div className="flex items-start gap-4">
+                                  {/* Drag Handle */}
+                                  <div {...provided.dragHandleProps} className="cursor-grab hover:cursor-grabbing mt-2">
+                                    <GripVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                                  </div>
+
+                                  {/* Item Number */}
+                                  <div className="flex-shrink-0">
+                                    <Label className="text-xs text-gray-500">No.</Label>
+                                    <Input value={item.no} className="w-16 h-8 text-center font-medium" disabled />
+                                  </div>
+
+                                  {/* Main Content */}
+                                  <div className="flex-1 space-y-4">
+                                    {/* Product Info Row */}
+                                    {(item.brand || item.model || item.category) && (
+                                      <div className="flex flex-wrap gap-2">
+                                        {item.brand && <Badge variant="secondary">{item.brand}</Badge>}
+                                        {item.model && <Badge variant="outline">{item.model}</Badge>}
+                                        {item.category && <Badge variant="default">{item.category}</Badge>}
+                                      </div>
+                                    )}
+
+                                    {/* Description */}
+                                    <div className="space-y-2">
+                                      <Label className="text-sm font-semibold">Description</Label>
+                                      <Textarea
+                                        value={item.description}
+                                        onChange={(e) => handleLineItemChange(index, "description", e.target.value)}
+                                        className="min-h-[80px] resize-none border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                        placeholder="Enter detailed description of the product or service"
+                                        rows={3}
+                                      />
+                                    </div>
+
+                                    {/* Technical Specifications */}
+                                    {item.specs && Object.keys(item.specs).length > 0 && (
+                                      <div className="space-y-2">
+                                        <Label className="text-sm font-semibold text-blue-700">
+                                          Technical Specifications
+                                        </Label>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 bg-blue-50 rounded-lg border">
+                                          {Object.entries(item.specs)
+                                            .filter(([_, value]) => value && value.trim())
+                                            .slice(0, 6) // Show top 6 specs
+                                            .map(([key, value]) => (
+                                              <div key={key} className="flex items-center gap-2 text-xs">
+                                                {getSpecIcon(key)}
+                                                <span className="font-medium text-blue-800 capitalize">{key}:</span>
+                                                <span className="text-blue-600 truncate" title={value}>
+                                                  {value}
+                                                </span>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Quantity, Unit, Price Row */}
+                                    <div className="grid grid-cols-4 gap-4">
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Quantity</Label>
+                                        <Input
+                                          type="number"
+                                          value={item.quantity}
+                                          onChange={(e) =>
+                                            handleLineItemChange(index, "quantity", Number.parseInt(e.target.value))
+                                          }
+                                          className="h-8 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                          min={1}
+                                          placeholder="1"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Unit</Label>
+                                        <Input
+                                          value={item.unit}
+                                          onChange={(e) => handleLineItemChange(index, "unit", e.target.value)}
+                                          className="h-8 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                          placeholder="pcs"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Price</Label>
+                                        <Input
+                                          type="number"
+                                          value={item.price}
+                                          onChange={(e) =>
+                                            handleLineItemChange(index, "price", Number.parseFloat(e.target.value))
+                                          }
+                                          className="h-8 text-right border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                          step="0.01"
+                                          min={0}
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Total</Label>
+                                        <Input
+                                          value={item.total.toFixed(2)}
+                                          className="h-8 text-right font-semibold bg-gray-50"
+                                          disabled
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Remove Button */}
+                                  <div className="flex-shrink-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRemoveLineItem(index)}
+                                      className="hover:bg-red-50 hover:text-red-600 transition-colors"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="col-span-1">
-                                <Input
-                                  value={item.no}
-                                  onChange={(e) => handleLineItemChange(index, "no", Number.parseInt(e.target.value))}
-                                  className="h-9 text-center font-medium"
-                                  disabled
-                                />
-                              </div>
-                              <div className="col-span-4">
-                                <Textarea
-                                  value={item.description}
-                                  onChange={(e) => handleLineItemChange(index, "description", e.target.value)}
-                                  className="min-h-[36px] resize-none border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                  placeholder="Enter detailed description of the product or service"
-                                  rows={2}
-                                />
-                              </div>
-                              <div className="col-span-1">
-                                <Input
-                                  type="number"
-                                  value={item.quantity}
-                                  onChange={(e) =>
-                                    handleLineItemChange(index, "quantity", Number.parseInt(e.target.value))
-                                  }
-                                  className="h-9 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                  min={1}
-                                  placeholder="1"
-                                />
-                              </div>
-                              <div className="col-span-1">
-                                <Input
-                                  value={item.unit}
-                                  onChange={(e) => handleLineItemChange(index, "unit", e.target.value)}
-                                  className="h-9 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                  placeholder="pcs"
-                                />
-                              </div>
-                              <div className="col-span-2">
-                                <Input
-                                  type="number"
-                                  value={item.price}
-                                  onChange={(e) =>
-                                    handleLineItemChange(index, "price", Number.parseFloat(e.target.value))
-                                  }
-                                  className="h-9 text-right border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                  step="0.01"
-                                  min={0}
-                                  placeholder="0.00"
-                                />
-                              </div>
-                              <div className="col-span-1">
-                                <Input
-                                  value={item.total.toFixed(2)}
-                                  className="h-9 text-right font-semibold bg-gray-50"
-                                  disabled
-                                />
-                              </div>
-                              <div className="col-span-1 flex justify-end">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleRemoveLineItem(index)}
-                                  className="hover:bg-red-50 hover:text-red-600 transition-colors"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
+                              </CardContent>
+                            </Card>
                           )}
                         </Draggable>
                       ))}
@@ -640,9 +759,25 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
         <Button
           size="lg"
           onClick={handleSave}
-          className="px-12 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105"
+          disabled={isSaving}
+          className="px-12 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
-          Save Quotation
+          {isSaving ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Saving...
+            </>
+          ) : hasUnsavedChanges ? (
+            <>
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </>
+          ) : (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Saved
+            </>
+          )}
         </Button>
       </div>
 
