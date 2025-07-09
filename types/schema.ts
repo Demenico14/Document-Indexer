@@ -21,4 +21,3 @@ export interface ParsedRecord {
     parentContext: string | null
     fullPath: string | null
   }
-  
