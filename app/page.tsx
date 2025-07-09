@@ -7,6 +7,7 @@ import { FilePreview } from "@/components/file-preview"
 import { XmlPreview } from "@/components/xml-preview"
 import { DiagnosticsPanel } from "@/components/diagnostics-panel"
 import { QuotationSystem } from "@/components/quotation-system"
+import { PWAInstallPrompt } from "@/components/pwa-install-prompt"
 
 export default function Home() {
   return (
@@ -52,6 +53,8 @@ export default function Home() {
           <QuotationSystem />
         </TabsContent>
       </Tabs>
+
+      <PWAInstallPrompt />
     </main>
   )
 }
