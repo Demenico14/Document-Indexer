@@ -20,6 +20,24 @@ function convertRecordsToLineItems(records: FileRecord[]) {
     let description = `${record.fieldName}: ${record.fieldValue}`
     let price = 0
 
+    // Check if the current record itself contains price information
+    if (record.fieldName) {
+      const fieldNameLower = record.fieldName.toLowerCase().trim()
+      if (
+        fieldNameLower === "price excl" ||
+        fieldNameLower === "price" ||
+        fieldNameLower === "selling" ||
+        fieldNameLower.includes("price") ||
+        fieldNameLower.includes("cost") ||
+        fieldNameLower.includes("amount")
+      ) {
+        const potentialPrice = Number.parseFloat(String(record.fieldValue))
+        if (!isNaN(potentialPrice)) {
+          price = potentialPrice
+        }
+      }
+    }
+
     // If we have context data, enhance the description
     if (record.context) {
       if (record.fileType.toLowerCase() === "xml" && record.context.xmlNode) {
@@ -47,13 +65,18 @@ function convertRecordsToLineItems(records: FileRecord[]) {
           })
         }
 
-        // Try to find a price field in the row data
-        const priceField = Object.entries(rowData).find(
-          ([key]) =>
-            key.toLowerCase().includes("price") ||
-            key.toLowerCase().includes("cost") ||
-            key.toLowerCase().includes("amount"),
-        )
+        // Try to find a price field in the row data - enhanced logic
+        const priceField = Object.entries(rowData).find(([key]) => {
+          const lowerKey = key.toLowerCase().trim()
+          return (
+            lowerKey === "price excl" ||
+            lowerKey === "price" ||
+            lowerKey === "selling" ||
+            lowerKey.includes("price") ||
+            lowerKey.includes("cost") ||
+            lowerKey.includes("amount")
+          )
+        })
 
         if (priceField) {
           const potentialPrice = Number.parseFloat(String(priceField[1]))
