@@ -463,94 +463,45 @@ function capitalizeFirst(str: string): string {
 // Enhanced function to create structured line items from extracted products
 export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
   return products.map((product, index) => {
-    // Create a comprehensive description with technical specifications
+    // Create a clean, concise description
     let description = ""
 
-    // Add product header with name/model/brand
-    const productHeader = []
-    if (product.brand) productHeader.push(product.brand)
-    if (product.name) productHeader.push(product.name)
-    if (product.model && product.model !== product.name) productHeader.push(`(${product.model})`)
+    // Product title (brand + name/model)
+    const titleParts = []
+    if (product.brand) titleParts.push(product.brand)
+    if (product.name) titleParts.push(product.name)
+    else if (product.model) titleParts.push(product.model)
 
-    if (productHeader.length > 0) {
-      description += `${productHeader.join(" ")}\n`
-      description += "=" + "=".repeat(productHeader.join(" ").length - 1) + "\n\n"
+    if (titleParts.length > 0) {
+      description += titleParts.join(" ") + "\n"
     }
 
-    // Add category if available
-    if (product.category) {
-      description += `Category: ${product.category}\n\n`
+    // Only show the most important specifications (max 4-5)
+    const keySpecs = getKeySpecifications(product.specs)
+
+    if (keySpecs.length > 0) {
+      description += "\nKey Features:\n"
+      keySpecs.forEach(([key, value]) => {
+        const shortValue = truncateValue(value, 50) // Limit value length
+        description += `• ${getSpecDisplayName(key)}: ${shortValue}\n`
+      })
     }
 
-    // Priority order for specifications (most important first)
-    const prioritySpecs = [
-      "display",
-      "processor",
-      "memory",
-      "storage",
-      "graphics",
-      "operatingSystem",
-      "battery",
-      "connectivity",
-      "camera",
-      "audio",
-      "security",
-      "ports",
-      "wireless",
-      "dimensions",
-      "weight",
-    ]
-
-    // Add technical specifications in priority order
-    const addedSpecs = new Set<string>()
-    let hasSpecs = false
-
-    // First, add priority specs
-    for (const specKey of prioritySpecs) {
-      if (product.specs[specKey] && !addedSpecs.has(specKey)) {
-        if (!hasSpecs) {
-          description += "TECHNICAL SPECIFICATIONS:\n"
-          description += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-          hasSpecs = true
-        }
-
-        const specName = getSpecDisplayName(specKey)
-        const specValue = cleanSpecValue(product.specs[specKey]!)
-        description += `▪ ${specName}: ${specValue}\n`
-        addedSpecs.add(specKey)
-      }
+    // Add custom description if it's short and relevant
+    if (
+      product.description &&
+      product.description.length < 200 &&
+      !description.toLowerCase().includes(product.description.toLowerCase())
+    ) {
+      description += `\n${product.description}`
     }
 
-    // Then add any remaining specs not in priority list
-    const remainingSpecs = Object.entries(product.specs)
-      .filter(([key, value]) => !addedSpecs.has(key) && value && value.trim())
-      .slice(0, 5) // Limit additional specs
-
-    for (const [key, value] of remainingSpecs) {
-      if (!hasSpecs) {
-        description += "TECHNICAL SPECIFICATIONS:\n"
-        description += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        hasSpecs = true
-      }
-
-      const specName = getSpecDisplayName(key)
-      const specValue = cleanSpecValue(value)
-      description += `▪ ${specName}: ${specValue}\n`
-    }
-
-    // Add pricing information if available
-    if (product.price) {
-      description += `\n💰 Price: ${product.currency || "USD"} ${product.price.toFixed(2)}\n`
-    }
-
-    // Add custom description if available and not redundant
-    if (product.description && !description.toLowerCase().includes(product.description.toLowerCase())) {
-      description += `\nAdditional Information:\n${product.description}\n`
-    }
-
-    // Fallback description if no specs found
+    // Fallback if no meaningful description
     if (!description.trim()) {
-      description = `${product.brand || ""} ${product.name || product.model || "Product"}\n\nTechnical specifications extracted from document data.`
+      description = `${product.brand || ""} ${product.name || product.model || "Product"}`.trim()
+      if (product.category) {
+        description += ` - ${product.category}`
+      }
     }
 
     return {
@@ -569,32 +520,65 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
   })
 }
 
+function getKeySpecifications(specs: TechSpecs): [string, string][] {
+  // Priority order for most important specs
+  const priorityOrder = ["display", "processor", "memory", "storage", "graphics", "battery", "operatingSystem"]
+
+  const keySpecs: [string, string][] = []
+
+  // Add priority specs first
+  for (const specKey of priorityOrder) {
+    if (specs[specKey] && keySpecs.length < 5) {
+      keySpecs.push([specKey, specs[specKey]!])
+    }
+  }
+
+  // If we still have room, add other important specs
+  if (keySpecs.length < 5) {
+    const remainingSpecs = Object.entries(specs)
+      .filter(
+        ([key, value]) => !priorityOrder.includes(key) && value && value.trim() && value.length < 80, // Avoid very long values
+      )
+      .slice(0, 5 - keySpecs.length)
+
+    keySpecs.push(...remainingSpecs)
+  }
+
+  return keySpecs
+}
+
 function getSpecDisplayName(specKey: string): string {
   const displayNames: { [key: string]: string } = {
     display: "Display",
     processor: "Processor",
-    memory: "Memory (RAM)",
+    memory: "RAM",
     storage: "Storage",
     graphics: "Graphics",
-    operatingSystem: "Operating System",
+    operatingSystem: "OS",
     battery: "Battery",
     connectivity: "Connectivity",
     camera: "Camera",
     audio: "Audio",
     security: "Security",
-    ports: "Ports & Interfaces",
+    ports: "Ports",
     wireless: "Wireless",
-    dimensions: "Dimensions",
+    dimensions: "Size",
     weight: "Weight",
   }
 
   return displayNames[specKey] || capitalizeFirst(specKey.replace(/([A-Z])/g, " $1"))
 }
 
-function cleanSpecValue(value: string): string {
-  // Clean up specification values for better readability
-  return value
-    .replace(/\s+/g, " ") // Replace multiple spaces with single space
-    .replace(/\|\s*\|/g, " | ") // Clean up pipe separators
-    .trim()
+function truncateValue(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+
+  // Try to truncate at a word boundary
+  const truncated = value.substring(0, maxLength)
+  const lastSpace = truncated.lastIndexOf(" ")
+
+  if (lastSpace > maxLength * 0.7) {
+    return truncated.substring(0, lastSpace) + "..."
+  }
+
+  return truncated + "..."
 }
