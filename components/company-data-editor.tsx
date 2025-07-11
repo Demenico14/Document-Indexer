@@ -3,19 +3,12 @@
 import type React from "react"
 
 import { useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Upload } from "lucide-react"
+import { Building, Save, X } from "lucide-react"
 import type { CompanyData } from "@/lib/types"
 
 interface CompanyDataEditorProps {
@@ -35,81 +28,171 @@ export function CompanyDataEditor({ companyData, onUpdateCompanyData, onCancel }
     })
   }
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setEditingData({
-          ...editingData,
-          logo: event.target.result as string,
-        })
-      }
-    }
-    reader.readAsDataURL(file)
-  }
-
   const handleSave = () => {
     onUpdateCompanyData(editingData)
   }
 
   return (
-    <Dialog open={true} onOpenChange={onCancel}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Company Information</DialogTitle>
-          <DialogDescription>Update your company details that appear on quotations</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                Company Information
+              </CardTitle>
+              <CardDescription className="text-blue-100">Update your company details for quotations</CardDescription>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onCancel} className="text-white hover:bg-white/20">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6 p-6">
           <div className="space-y-2">
-            <Label htmlFor="name">Company Name</Label>
-            <Input id="name" name="name" value={editingData.name} onChange={handleInputChange} />
+            <Label htmlFor="name" className="text-sm font-semibold text-gray-700">
+              Company Name *
+            </Label>
+            <Input
+              id="name"
+              name="name"
+              value={editingData.name}
+              onChange={handleInputChange}
+              placeholder="Enter your company name"
+              className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+            />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="address">Address</Label>
-            <Textarea id="address" name="address" value={editingData.address} onChange={handleInputChange} rows={3} />
+            <Label htmlFor="address" className="text-sm font-semibold text-gray-700">
+              Address *
+            </Label>
+            <Textarea
+              id="address"
+              name="address"
+              value={editingData.address}
+              onChange={handleInputChange}
+              rows={4}
+              placeholder="Enter your complete business address"
+              className="border-2 border-gray-200 focus:border-blue-500 transition-colors resize-none"
+            />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" name="phone" value={editingData.phone} onChange={handleInputChange} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" value={editingData.email} onChange={handleInputChange} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="logo">Company Logo</Label>
-            <div className="flex items-center gap-4">
-              {editingData.logo && (
-                <img
-                  src={editingData.logo || "/placeholder.svg"}
-                  alt="Company Logo"
-                  className="h-12 w-auto object-contain"
-                />
-              )}
-              <Button variant="outline" onClick={() => document.getElementById("logo-upload")?.click()}>
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Logo
-              </Button>
-              <input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="text-sm font-semibold text-gray-700">
+                Phone Number
+              </Label>
+              <Input
+                id="phone"
+                name="phone"
+                value={editingData.phone}
+                onChange={handleInputChange}
+                placeholder="+1 (555) 123-4567"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-semibold text-gray-700">
+                Email Address
+              </Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={editingData.email}
+                onChange={handleInputChange}
+                placeholder="info@company.com"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
             </div>
           </div>
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>Save Changes</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="website" className="text-sm font-semibold text-gray-700">
+                Website
+              </Label>
+              <Input
+                id="website"
+                name="website"
+                value={editingData.website}
+                onChange={handleInputChange}
+                placeholder="www.company.com"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vatNumber" className="text-sm font-semibold text-gray-700">
+                VAT Number
+              </Label>
+              <Input
+                id="vatNumber"
+                name="vatNumber"
+                value={editingData.vatNumber}
+                onChange={handleInputChange}
+                placeholder="GB123456789"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="registrationNumber" className="text-sm font-semibold text-gray-700">
+                Registration Number
+              </Label>
+              <Input
+                id="registrationNumber"
+                name="registrationNumber"
+                value={editingData.registrationNumber}
+                onChange={handleInputChange}
+                placeholder="Company registration number"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tin" className="text-sm font-semibold text-gray-700">
+                Tax Identification Number
+              </Label>
+              <Input
+                id="tin"
+                name="tin"
+                value={editingData.tin}
+                onChange={handleInputChange}
+                placeholder="Tax ID number"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="bankDetails" className="text-sm font-semibold text-gray-700">
+              Bank Details
+            </Label>
+            <Textarea
+              id="bankDetails"
+              name="bankDetails"
+              value={editingData.bankDetails}
+              onChange={handleInputChange}
+              rows={4}
+              placeholder="Enter your bank account details for payments"
+              className="border-2 border-gray-200 focus:border-blue-500 transition-colors resize-none"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

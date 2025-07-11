@@ -27,7 +27,7 @@ function convertRecordsToLineItems(records: FileRecord[]) {
   // Fallback to the original method if no structured data found
   return records.map((record, index) => {
     // Create a description based on the record and its context
-    const description = `${record.fieldName}: ${record.fieldValue}`
+    let description = `${record.fieldName}: ${record.fieldValue}`
     let price = 0
 
     // Check if the current record itself contains price information
@@ -48,195 +48,250 @@ function convertRecordsToLineItems(records: FileRecord[]) {
       }
     }
 
+    // If we have context data, enhance the description
+    if (record.context) {
+      if (record.fileType.toLowerCase() === "xml" && record.context.xmlNode) {
+        // For XML records, add a simplified XML context
+        const xmlPreview = record.context.xmlNode
+          .replace(/</g, "")
+          .replace(/>/g, "")
+          .replace(/\s+/g, " ")
+          .substring(0, 100)
+
+        if (xmlPreview) {
+          description += `\nXML Context: ${xmlPreview}${xmlPreview.length >= 100 ? "..." : ""}`
+        }
+      } else if (record.context.rowData) {
+        // For spreadsheet records, add key row data
+        const rowData = record.context.rowData
+        const relevantFields = Object.entries(rowData)
+          .filter(([key]) => key !== record.fieldName) // Exclude the field we already have
+          .slice(0, 3) // Take up to 3 additional fields
+
+        if (relevantFields.length > 0) {
+          description += "\nAdditional data:"
+          relevantFields.forEach(([key, value]) => {
+            description += `\n- ${key}: ${value}`
+          })
+        }
+
+        // Try to find a price field in the row data - enhanced logic
+        const priceField = Object.entries(rowData).find(([key]) => {
+          const lowerKey = key.toLowerCase().trim()
+          return (
+            lowerKey === "price excl" ||
+            lowerKey === "price" ||
+            lowerKey === "selling" ||
+            lowerKey.includes("price") ||
+            lowerKey.includes("cost") ||
+            lowerKey.includes("amount")
+          )
+        })
+
+        if (priceField) {
+          const potentialPrice = Number.parseFloat(String(priceField[1]))
+          if (!isNaN(potentialPrice)) {
+            price = potentialPrice
+          }
+        }
+      }
+    }
+
     return {
       id: `item-${Date.now()}-${index}`,
       no: index + 1,
-      description,
+      description: description,
       quantity: 1,
       unit: "Each",
-      price,
-      total: price,
+      price: price,
+      total: price, // Will be calculated when price is set
     }
   })
 }
 
-interface QuotationSystemProps {
-  records: FileRecord[]
-  onRecordsUpdate?: (records: FileRecord[]) => void
-}
-
-export function QuotationSystem({ records, onRecordsUpdate }: QuotationSystemProps) {
+export function QuotationSystem() {
   const [quotationData, setQuotationData] = useState<QuotationData>(initialQuotationData)
   const [companyData, setCompanyData] = useState<CompanyData>(initialCompanyData)
-  const [activeTab, setActiveTab] = useState("editor")
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+  const [activeTab, setActiveTab] = useState("edit")
+  const [showCompanyEditor, setShowCompanyEditor] = useState(false)
+  const [isIntelligentMode, setIsIntelligentMode] = useState(true)
   const { toast } = useToast()
 
-  // Auto-generate line items when records change
+  // Update the useEffect to use the enhanced convertRecordsToLineItems function
   useEffect(() => {
-    if (records && records.length > 0) {
-      const lineItems = convertRecordsToLineItems(records)
-      setQuotationData((prev) => ({
-        ...prev,
-        lineItems,
-      }))
-    }
-  }, [records])
+    // Check if there are records from the Document Indexer
+    const storedRecords = localStorage.getItem("quotationRecords")
+    console.log("Checking for stored records:", storedRecords ? "Found" : "None")
 
-  const handleQuotationUpdate = (updatedData: QuotationData) => {
-    setQuotationData(updatedData)
+    if (storedRecords) {
+      try {
+        const records = JSON.parse(storedRecords) as FileRecord[]
+        console.log(`Found ${records.length} records in localStorage`)
+
+        if (records.length > 0) {
+          // Convert records to line items using intelligent extraction
+          const newLineItems = convertRecordsToLineItems(records)
+          console.log(`Converted to ${newLineItems.length} line items`)
+
+          // Calculate totals
+          const subtotal = newLineItems.reduce((sum, item) => sum + item.total, 0)
+          const markupAmount = subtotal * (quotationData.markupRate / 100)
+          const totalAmount = subtotal + markupAmount
+
+          // Create a new quotation with these line items
+          const newQuotationData = {
+            ...quotationData,
+            lineItems: newLineItems,
+            subtotal,
+            markupAmount,
+            totalAmount,
+          }
+
+          setQuotationData(newQuotationData)
+          setActiveTab("preview") // Navigate to preview tab when creating quotation
+
+          // Clear the stored records to avoid reloading them on refresh
+          localStorage.removeItem("quotationRecords")
+
+          // Check if we used intelligent extraction
+          const hasStructuredData = newLineItems.some((item) => item.specs && Object.keys(item.specs).length > 0)
+
+          toast({
+            title: hasStructuredData ? "Smart Import Complete!" : "Records Imported",
+            description: hasStructuredData
+              ? `${records.length} records intelligently processed with technical specifications`
+              : `${records.length} records imported from Document Indexer with context data`,
+          })
+        }
+      } catch (error) {
+        console.error("Error parsing stored records:", error)
+        toast({
+          title: "Import Error",
+          description: "There was an error importing records from the Document Indexer",
+          variant: "destructive",
+        })
+      }
+    }
+  }, [])
+
+  const handleUpdateQuotation = (data: QuotationData) => {
+    setQuotationData(data)
   }
 
-  const handleCompanyUpdate = (updatedData: CompanyData) => {
-    setCompanyData(updatedData)
+  const handleUpdateCompanyData = (data: CompanyData) => {
+    setCompanyData(data)
+    setShowCompanyEditor(false)
   }
 
   const handleReorderLineItems = (reorderedItems: LineItem[]) => {
-    setQuotationData((prev) => ({
-      ...prev,
+    setQuotationData({
+      ...quotationData,
       lineItems: reorderedItems,
-    }))
-  }
-
-  const handleCreateQuotation = () => {
-    // Navigate to quotation tab when create quotation is pressed
-    setActiveTab("quotation")
-
-    toast({
-      title: "Quotation Created",
-      description: "Your quotation has been generated and is ready for preview.",
     })
   }
 
-  const generatePDF = async () => {
-    setIsGeneratingPDF(true)
+  const handleExportPdf = async () => {
+    const element = document.getElementById("quotation-preview")
+    if (!element) return
 
     try {
-      const element = document.getElementById("quotation-preview")
-      if (!element) {
-        throw new Error("Quotation preview element not found")
-      }
+      toast({
+        title: "Preparing PDF",
+        description: "Please wait while we generate your quotation PDF...",
+      })
 
-      // Create canvas from the quotation preview
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
+        logging: false,
       })
 
-      // Create PDF
       const imgData = canvas.toDataURL("image/png")
-      const pdf = new jsPDF("p", "mm", "a4")
+
+      // A4 dimensions in mm: 210 x 297
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      })
 
       const imgWidth = 210
-      const pageHeight = 295
       const imgHeight = (canvas.height * imgWidth) / canvas.width
-      let heightLeft = imgHeight
 
-      let position = 0
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight
-        pdf.addPage()
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
-      }
-
-      // Save the PDF
-      const fileName = `Quotation-${quotationData.documentNumber || "Draft"}.pdf`
-      pdf.save(fileName)
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight)
+      pdf.save(`Quotation-${quotationData.documentNumber}.pdf`)
 
       toast({
         title: "PDF Generated",
-        description: `Quotation has been saved as ${fileName}`,
+        description: "Your quotation has been exported as a PDF.",
       })
     } catch (error) {
       console.error("Error generating PDF:", error)
       toast({
-        title: "PDF Generation Failed",
+        title: "Export Failed",
         description: "There was an error generating the PDF. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsGeneratingPDF(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="container mx-auto p-6">
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Quotation Management System</h1>
-          <p className="text-gray-600">Create, edit, and manage professional quotations</p>
+    <div className="space-y-6">
+      <div className="flex flex-col space-y-2">
+        <div className="flex items-center space-x-2">
+          <FileText className="h-6 w-6" />
+          <h1 className="text-3xl font-bold tracking-tight">Quotation System</h1>
+          {isIntelligentMode && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+              <Zap className="h-3 w-3" />
+              Smart Mode
+            </div>
+          )}
+        </div>
+        <p className="text-muted-foreground">
+          Create, edit and export professional sales quotations with intelligent specification extraction
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <div className="flex justify-between items-center mb-4">
+          <TabsList>
+            <TabsTrigger value="edit">Edit Quotation</TabsTrigger>
+            <TabsTrigger value="preview">Preview</TabsTrigger>
+          </TabsList>
+
+          <div className="flex gap-2 ml-4">
+            <Button variant="outline" size="sm" onClick={() => setShowCompanyEditor(true)}>
+              <Settings className="h-4 w-4 mr-2" />
+              Company Data
+            </Button>
+            <Button variant="default" size="sm" onClick={handleExportPdf}>
+              <Download className="h-4 w-4 mr-2" />
+              Export PDF
+            </Button>
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <div className="flex justify-between items-center">
-            <TabsList className="grid w-auto grid-cols-3 bg-white shadow-sm">
-              <TabsTrigger value="editor" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Editor
-              </TabsTrigger>
-              <TabsTrigger value="quotation" className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                Quotation
-              </TabsTrigger>
-              <TabsTrigger value="company" className="flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Company
-              </TabsTrigger>
-            </TabsList>
+        <TabsContent value="edit" className="mt-0">
+          <QuotationEditor
+            quotationData={quotationData}
+            onUpdateQuotation={handleUpdateQuotation}
+            onReorderLineItems={handleReorderLineItems}
+          />
+        </TabsContent>
 
-            <div className="flex gap-2">
-              <Button
-                onClick={handleCreateQuotation}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-              >
-                <Zap className="h-4 w-4 mr-2" />
-                Create Quotation
-              </Button>
-              <Button
-                onClick={generatePDF}
-                disabled={isGeneratingPDF}
-                variant="outline"
-                className="border-blue-200 hover:bg-blue-50 bg-transparent"
-              >
-                {isGeneratingPDF ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export PDF
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
+        <TabsContent value="preview" className="mt-0">
+          <QuotationPreview quotationData={quotationData} companyData={companyData} />
+        </TabsContent>
+      </Tabs>
 
-          <TabsContent value="editor" className="space-y-6">
-            <QuotationEditor
-              quotationData={quotationData}
-              onUpdateQuotation={handleQuotationUpdate}
-              onReorderLineItems={handleReorderLineItems}
-            />
-          </TabsContent>
-
-          <TabsContent value="quotation" className="space-y-6">
-            <QuotationPreview quotationData={quotationData} companyData={companyData} />
-          </TabsContent>
-
-          <TabsContent value="company" className="space-y-6">
-            <CompanyDataEditor companyData={companyData} onUpdateCompany={handleCompanyUpdate} />
-          </TabsContent>
-        </Tabs>
-      </div>
+      {showCompanyEditor && (
+        <CompanyDataEditor
+          companyData={companyData}
+          onUpdateCompanyData={handleUpdateCompanyData}
+          onCancel={() => setShowCompanyEditor(false)}
+        />
+      )}
     </div>
   )
 }
