@@ -8,8 +8,20 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, X } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Plus, X, Monitor, Cpu, HardDrive, Zap, Settings } from "lucide-react"
 import type { LineItem } from "@/lib/types"
+
+const COMMON_SPECS = [
+  { key: "display", label: "Display", icon: Monitor, placeholder: "e.g., 15.6 inch, 1920x1080" },
+  { key: "processor", label: "Processor", icon: Cpu, placeholder: "e.g., Intel i7, AMD Ryzen 5" },
+  { key: "storage", label: "Storage", icon: HardDrive, placeholder: "e.g., 512GB SSD, 1TB HDD" },
+  { key: "graphics", label: "Graphics", icon: Monitor, placeholder: "e.g., NVIDIA GTX 1650, Integrated" },
+  { key: "connectivity", label: "Connectivity", icon: Zap, placeholder: "e.g., Wi-Fi 6, Bluetooth 5.0" },
+  { key: "security", label: "Security", icon: Settings, placeholder: "e.g., Fingerprint, Face ID" },
+  { key: "battery", label: "Battery", icon: Zap, placeholder: "e.g., 5000mAh, 10 hours" },
+  { key: "memory", label: "Memory", icon: Cpu, placeholder: "e.g., 16GB RAM, DDR4" },
+]
 
 interface AddItemModalProps {
   isOpen: boolean
@@ -29,8 +41,6 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
   })
 
   const [specs, setSpecs] = useState<{ [key: string]: string }>({})
-  const [newSpecKey, setNewSpecKey] = useState("")
-  const [newSpecValue, setNewSpecValue] = useState("")
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -40,15 +50,11 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
     }))
   }
 
-  const handleAddSpec = () => {
-    if (newSpecKey.trim() && newSpecValue.trim()) {
-      setSpecs((prev) => ({
-        ...prev,
-        [newSpecKey.trim()]: newSpecValue.trim(),
-      }))
-      setNewSpecKey("")
-      setNewSpecValue("")
-    }
+  const handleSpecChange = (specKey: string, value: string) => {
+    setSpecs((prev) => ({
+      ...prev,
+      [specKey]: value,
+    }))
   }
 
   const handleRemoveSpec = (key: string) => {
@@ -60,13 +66,28 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
   }
 
   const generateDescription = () => {
-    let description = formData.description
+    let description = ""
 
-    // Add specifications in a clean format if any exist
-    if (Object.keys(specs).length > 0) {
+    // Product title
+    const titleParts = []
+    if (formData.brand) titleParts.push(formData.brand)
+    if (formData.model) titleParts.push(formData.model)
+
+    if (titleParts.length > 0) {
+      description += titleParts.join(" ") + "\n\n"
+    }
+
+    // Main description
+    description += formData.description
+
+    // Add key specifications if any exist
+    const filledSpecs = Object.entries(specs).filter(([_, value]) => value.trim())
+    if (filledSpecs.length > 0) {
       description += "\n\nKey Features:\n"
-      Object.entries(specs).forEach(([key, value]) => {
-        description += `• ${key}: ${value}\n`
+      filledSpecs.forEach(([key, value]) => {
+        const specInfo = COMMON_SPECS.find((s) => s.key === key)
+        const label = specInfo?.label || key
+        description += `• ${label}: ${value}\n`
       })
     }
 
@@ -107,8 +128,6 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
       model: "",
     })
     setSpecs({})
-    setNewSpecKey("")
-    setNewSpecValue("")
     onClose()
   }
 
@@ -116,10 +135,10 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">Add New Item</DialogTitle>
-          <DialogDescription>Add a new product or service to your quotation</DialogDescription>
+          <DialogDescription>Add a new product or service with detailed specifications</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -150,13 +169,25 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
               </div>
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
-                <Input
-                  id="category"
-                  name="category"
+                <Select
                   value={formData.category}
-                  onChange={handleInputChange}
-                  placeholder="e.g., Laptop, Phone, Service"
-                />
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="laptop">Laptop</SelectItem>
+                    <SelectItem value="desktop">Desktop</SelectItem>
+                    <SelectItem value="monitor">Monitor</SelectItem>
+                    <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="tablet">Tablet</SelectItem>
+                    <SelectItem value="accessory">Accessory</SelectItem>
+                    <SelectItem value="software">Software</SelectItem>
+                    <SelectItem value="service">Service</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -175,71 +206,46 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
             </div>
           </div>
 
-          {/* Key Specifications */}
+          {/* Technical Specifications */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">Key Specifications (Optional)</h3>
-            <p className="text-sm text-gray-600">Add only the most important specifications (max 5 recommended)</p>
+            <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">Technical Specifications</h3>
+            <p className="text-sm text-gray-600">
+              Fill in the relevant specifications. These will appear as separate columns in the quotation.
+            </p>
 
-            {/* Add new specification */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="newSpecKey">Feature Name</Label>
-                <Input
-                  id="newSpecKey"
-                  value={newSpecKey}
-                  onChange={(e) => setNewSpecKey(e.target.value)}
-                  placeholder="e.g., Display, Processor, RAM"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="newSpecValue">Feature Value</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="newSpecValue"
-                    value={newSpecValue}
-                    onChange={(e) => setNewSpecValue(e.target.value)}
-                    placeholder="e.g., 15.6 inch, Intel i7, 16GB"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleAddSpec}
-                    disabled={!newSpecKey.trim() || !newSpecValue.trim()}
-                    size="icon"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Display existing specifications */}
-            {Object.keys(specs).length > 0 && (
-              <div className="space-y-2">
-                <Label>Added Features ({Object.keys(specs).length}/5)</Label>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {Object.entries(specs).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between bg-gray-50 p-3 rounded border">
-                      <span className="text-sm">
-                        <strong>{key}:</strong> {value}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveSpec(key)}
-                        className="h-6 w-6 hover:bg-red-100 hover:text-red-600"
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
+              {COMMON_SPECS.map((spec) => {
+                const IconComponent = spec.icon
+                return (
+                  <div key={spec.key} className="space-y-2">
+                    <Label htmlFor={spec.key} className="flex items-center gap-2">
+                      <IconComponent className="h-4 w-4" />
+                      {spec.label}
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id={spec.key}
+                        value={specs[spec.key] || ""}
+                        onChange={(e) => handleSpecChange(spec.key, e.target.value)}
+                        placeholder={spec.placeholder}
+                        className="flex-1"
+                      />
+                      {specs[spec.key] && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveSpec(spec.key)}
+                          className="hover:bg-red-100 hover:text-red-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {Object.keys(specs).length >= 5 && (
-              <p className="text-sm text-amber-600">Maximum of 5 specifications recommended for readability</p>
-            )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Pricing Information */}
@@ -261,13 +267,23 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
               </div>
               <div className="space-y-2">
                 <Label htmlFor="unit">Unit</Label>
-                <Input
-                  id="unit"
-                  name="unit"
+                <Select
                   value={formData.unit}
-                  onChange={handleInputChange}
-                  placeholder="Each, Pcs, Hours"
-                />
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, unit: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Each">Each</SelectItem>
+                    <SelectItem value="Piece">Piece</SelectItem>
+                    <SelectItem value="Set">Set</SelectItem>
+                    <SelectItem value="Hour">Hour</SelectItem>
+                    <SelectItem value="Day">Day</SelectItem>
+                    <SelectItem value="Month">Month</SelectItem>
+                    <SelectItem value="Year">Year</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="price">Unit Price *</Label>
@@ -292,7 +308,7 @@ export function AddItemModal({ isOpen, onClose, onAddItem }: AddItemModalProps) 
           </div>
 
           {/* Preview */}
-          {(formData.description || Object.keys(specs).length > 0) && (
+          {(formData.description || Object.keys(specs).some((key) => specs[key])) && (
             <div className="space-y-2">
               <Label>Description Preview</Label>
               <div className="p-3 bg-gray-50 border rounded-md text-sm whitespace-pre-line max-h-32 overflow-y-auto">

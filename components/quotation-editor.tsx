@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Plus,
   Trash2,
@@ -25,6 +25,7 @@ import {
   Monitor,
   HardDrive,
   Zap,
+  Settings,
 } from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { calculateTotals } from "@/lib/quotation-utils"
@@ -38,11 +39,37 @@ interface QuotationEditorProps {
   onReorderLineItems: (items: LineItem[]) => void
 }
 
+const AVAILABLE_SPEC_COLUMNS = [
+  { key: "display", label: "Display", icon: Monitor },
+  { key: "processor", label: "Processor", icon: Cpu },
+  { key: "storage", label: "Storage", icon: HardDrive },
+  { key: "graphics", label: "Graphics", icon: Monitor },
+  { key: "connectivity", label: "Connectivity", icon: Zap },
+  { key: "security", label: "Security", icon: Settings },
+  { key: "battery", label: "Battery", icon: Zap },
+  { key: "memory", label: "Memory", icon: Cpu },
+  { key: "camera", label: "Camera", icon: Monitor },
+  { key: "audio", label: "Audio", icon: Settings },
+  { key: "operatingSystem", label: "OS", icon: Settings },
+  { key: "ports", label: "Ports", icon: Settings },
+  { key: "wireless", label: "Wireless", icon: Zap },
+  { key: "dimensions", label: "Dimensions", icon: Settings },
+  { key: "weight", label: "Weight", icon: Settings },
+]
+
 export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLineItems }: QuotationEditorProps) {
   const [editingData, setEditingData] = useState<QuotationData>(quotationData)
   const [showAddItemModal, setShowAddItemModal] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [selectedSpecColumns, setSelectedSpecColumns] = useState<string[]>([
+    "display",
+    "processor",
+    "storage",
+    "graphics",
+    "battery",
+  ])
+  const [showColumnSelector, setShowColumnSelector] = useState(false)
   const { toast } = useToast()
 
   // Update editingData when quotationData prop changes
@@ -124,6 +151,25 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
 
     // Auto-update the preview with changes
     onUpdateQuotation(finalUpdatedData)
+  }
+
+  const handleSpecChange = (index: number, specKey: string, value: string) => {
+    const updatedItems = [...editingData.lineItems]
+
+    if (!updatedItems[index].specs) {
+      updatedItems[index].specs = {}
+    }
+
+    updatedItems[index].specs![specKey] = value
+
+    const updatedData = {
+      ...editingData,
+      lineItems: updatedItems,
+    }
+
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
+    onUpdateQuotation(updatedData)
   }
 
   const handleAddItem = (newItemData: Omit<LineItem, "id" | "no">) => {
@@ -224,20 +270,39 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
     }
   }
 
-  const getSpecIcon = (specType: string) => {
-    switch (specType) {
-      case "processor":
-        return <Cpu className="h-3 w-3" />
-      case "display":
-        return <Monitor className="h-3 w-3" />
-      case "storage":
-        return <HardDrive className="h-3 w-3" />
-      case "battery":
-        return <Zap className="h-3 w-3" />
-      default:
-        return null
+  const handleColumnSelectionChange = (columnKey: string, checked: boolean) => {
+    if (checked) {
+      if (selectedSpecColumns.length < 5) {
+        setSelectedSpecColumns([...selectedSpecColumns, columnKey])
+      } else {
+        toast({
+          title: "Maximum Columns Reached",
+          description: "You can select up to 5 specification columns for optimal display.",
+          variant: "destructive",
+        })
+      }
+    } else {
+      setSelectedSpecColumns(selectedSpecColumns.filter((col) => col !== columnKey))
     }
   }
+
+  const getSpecIcon = (specType: string) => {
+    const specColumn = AVAILABLE_SPEC_COLUMNS.find((col) => col.key === specType)
+    if (specColumn) {
+      const IconComponent = specColumn.icon
+      return <IconComponent className="h-3 w-3" />
+    }
+    return null
+  }
+
+  const getColumnLabel = (specKey: string) => {
+    const specColumn = AVAILABLE_SPEC_COLUMNS.find((col) => col.key === specKey)
+    return specColumn?.label || specKey
+  }
+
+  // Calculate grid columns based on selected spec columns
+  const totalColumns = 5 + selectedSpecColumns.length // Base columns + spec columns
+  const gridCols = `grid-cols-${Math.min(totalColumns, 12)}`
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto p-6">
@@ -484,15 +549,66 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
               <CardTitle className="text-xl">Line Items</CardTitle>
               <CardDescription className="text-purple-100">Products and services in this quotation</CardDescription>
             </div>
-            <Button
-              onClick={() => setShowAddItemModal(true)}
-              className="bg-white text-purple-600 hover:bg-purple-50 transition-colors"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setShowColumnSelector(!showColumnSelector)}
+                variant="outline"
+                className="bg-white text-purple-600 hover:bg-purple-50 transition-colors"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Columns
+              </Button>
+              <Button
+                onClick={() => setShowAddItemModal(true)}
+                className="bg-white text-purple-600 hover:bg-purple-50 transition-colors"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Item
+              </Button>
+            </div>
           </div>
         </CardHeader>
+
+        {/* Column Selector */}
+        {showColumnSelector && (
+          <div className="border-b bg-purple-50 p-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold text-purple-800">
+                  Select Specification Columns ({selectedSpecColumns.length}/5)
+                </Label>
+                <Button
+                  onClick={() => setShowColumnSelector(false)}
+                  variant="ghost"
+                  size="sm"
+                  className="text-purple-600"
+                >
+                  Done
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {AVAILABLE_SPEC_COLUMNS.map((column) => {
+                  const IconComponent = column.icon
+                  return (
+                    <div key={column.key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={column.key}
+                        checked={selectedSpecColumns.includes(column.key)}
+                        onCheckedChange={(checked) => handleColumnSelectionChange(column.key, checked as boolean)}
+                        disabled={!selectedSpecColumns.includes(column.key) && selectedSpecColumns.length >= 5}
+                      />
+                      <Label htmlFor={column.key} className="flex items-center gap-1 text-sm cursor-pointer">
+                        <IconComponent className="h-3 w-3" />
+                        {column.label}
+                      </Label>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         <CardContent className="p-6">
           <DragDropContext onDragEnd={handleDragEnd}>
             <Droppable droppableId="line-items">
@@ -509,139 +625,138 @@ export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLin
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="border rounded-lg overflow-hidden shadow-sm">
+                      {/* Header Row */}
+                      <div
+                        className="grid gap-2 bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700"
+                        style={{
+                          gridTemplateColumns: `40px 60px 1fr ${selectedSpecColumns.map(() => "120px").join(" ")} 80px 80px 100px 100px 40px`,
+                        }}
+                      >
+                        <div></div>
+                        <div>No.</div>
+                        <div>Description</div>
+                        {selectedSpecColumns.map((specKey) => (
+                          <div key={specKey} className="flex items-center gap-1">
+                            {getSpecIcon(specKey)}
+                            {getColumnLabel(specKey)}
+                          </div>
+                        ))}
+                        <div>Qty</div>
+                        <div>Unit</div>
+                        <div>Price</div>
+                        <div>Total</div>
+                        <div></div>
+                      </div>
+
                       {editingData.lineItems.map((item, index) => (
                         <Draggable key={item.id} draggableId={item.id} index={index}>
                           {(provided, snapshot) => (
-                            <Card
+                            <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
-                              className={`transition-all duration-200 ${
-                                snapshot.isDragging ? "shadow-lg scale-105 rotate-2" : "hover:shadow-md"
+                              className={`grid gap-2 px-4 py-4 border-t items-center transition-colors ${
+                                snapshot.isDragging ? "bg-blue-50 shadow-lg" : "bg-white hover:bg-gray-50"
                               }`}
+                              style={{
+                                gridTemplateColumns: `40px 60px 1fr ${selectedSpecColumns.map(() => "120px").join(" ")} 80px 80px 100px 100px 40px`,
+                              }}
                             >
-                              <CardContent className="p-6">
-                                <div className="flex items-start gap-4">
-                                  {/* Drag Handle */}
-                                  <div {...provided.dragHandleProps} className="cursor-grab hover:cursor-grabbing mt-2">
-                                    <GripVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-                                  </div>
-
-                                  {/* Item Number */}
-                                  <div className="flex-shrink-0">
-                                    <Label className="text-xs text-gray-500">No.</Label>
-                                    <Input value={item.no} className="w-16 h-8 text-center font-medium" disabled />
-                                  </div>
-
-                                  {/* Main Content */}
-                                  <div className="flex-1 space-y-4">
-                                    {/* Product Info Row */}
-                                    {(item.brand || item.model || item.category) && (
-                                      <div className="flex flex-wrap gap-2">
-                                        {item.brand && <Badge variant="secondary">{item.brand}</Badge>}
-                                        {item.model && <Badge variant="outline">{item.model}</Badge>}
-                                        {item.category && <Badge variant="default">{item.category}</Badge>}
-                                      </div>
-                                    )}
-
-                                    {/* Description */}
-                                    <div className="space-y-2">
-                                      <Label className="text-sm font-semibold">Description</Label>
-                                      <Textarea
-                                        value={item.description}
-                                        onChange={(e) => handleLineItemChange(index, "description", e.target.value)}
-                                        className="min-h-[80px] resize-none border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                        placeholder="Enter detailed description of the product or service"
-                                        rows={3}
-                                      />
-                                    </div>
-
-                                    {/* Technical Specifications */}
-                                    {item.specs && Object.keys(item.specs).length > 0 && (
-                                      <div className="space-y-2">
-                                        <Label className="text-sm font-semibold text-blue-700">
-                                          Technical Specifications
-                                        </Label>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 bg-blue-50 rounded-lg border">
-                                          {Object.entries(item.specs)
-                                            .filter(([_, value]) => value && value.trim())
-                                            .slice(0, 6) // Show top 6 specs
-                                            .map(([key, value]) => (
-                                              <div key={key} className="flex items-center gap-2 text-xs">
-                                                {getSpecIcon(key)}
-                                                <span className="font-medium text-blue-800 capitalize">{key}:</span>
-                                                <span className="text-blue-600 truncate" title={value}>
-                                                  {value}
-                                                </span>
-                                              </div>
-                                            ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Quantity, Unit, Price Row */}
-                                    <div className="grid grid-cols-4 gap-4">
-                                      <div className="space-y-1">
-                                        <Label className="text-xs text-gray-500">Quantity</Label>
-                                        <Input
-                                          type="number"
-                                          value={item.quantity}
-                                          onChange={(e) =>
-                                            handleLineItemChange(index, "quantity", Number.parseInt(e.target.value))
-                                          }
-                                          className="h-8 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                          min={1}
-                                          placeholder="1"
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-xs text-gray-500">Unit</Label>
-                                        <Input
-                                          value={item.unit}
-                                          onChange={(e) => handleLineItemChange(index, "unit", e.target.value)}
-                                          className="h-8 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                          placeholder="pcs"
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-xs text-gray-500">Price</Label>
-                                        <Input
-                                          type="number"
-                                          value={item.price}
-                                          onChange={(e) =>
-                                            handleLineItemChange(index, "price", Number.parseFloat(e.target.value))
-                                          }
-                                          className="h-8 text-right border-2 border-gray-200 focus:border-purple-500 transition-colors"
-                                          step="0.01"
-                                          min={0}
-                                          placeholder="0.00"
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-xs text-gray-500">Total</Label>
-                                        <Input
-                                          value={item.total.toFixed(2)}
-                                          className="h-8 text-right font-semibold bg-gray-50"
-                                          disabled
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Remove Button */}
-                                  <div className="flex-shrink-0">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => handleRemoveLineItem(index)}
-                                      className="hover:bg-red-50 hover:text-red-600 transition-colors"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
+                              {/* Drag Handle */}
+                              <div className="flex items-center">
+                                <div {...provided.dragHandleProps} className="cursor-grab hover:cursor-grabbing">
+                                  <GripVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
                                 </div>
-                              </CardContent>
-                            </Card>
+                              </div>
+
+                              {/* Item Number */}
+                              <div>
+                                <Input value={item.no} className="h-9 text-center font-medium" disabled />
+                              </div>
+
+                              {/* Description */}
+                              <div>
+                                <Textarea
+                                  value={item.description}
+                                  onChange={(e) => handleLineItemChange(index, "description", e.target.value)}
+                                  className="min-h-[36px] resize-none border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                  placeholder="Enter detailed description"
+                                  rows={2}
+                                />
+                              </div>
+
+                              {/* Specification Columns */}
+                              {selectedSpecColumns.map((specKey) => (
+                                <div key={specKey}>
+                                  <Input
+                                    value={item.specs?.[specKey] || ""}
+                                    onChange={(e) => handleSpecChange(index, specKey, e.target.value)}
+                                    className="h-9 text-sm border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                    placeholder={`Enter ${getColumnLabel(specKey).toLowerCase()}`}
+                                  />
+                                </div>
+                              ))}
+
+                              {/* Quantity */}
+                              <div>
+                                <Input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) =>
+                                    handleLineItemChange(index, "quantity", Number.parseInt(e.target.value))
+                                  }
+                                  className="h-9 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                  min={1}
+                                  placeholder="1"
+                                />
+                              </div>
+
+                              {/* Unit */}
+                              <div>
+                                <Input
+                                  value={item.unit}
+                                  onChange={(e) => handleLineItemChange(index, "unit", e.target.value)}
+                                  className="h-9 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                  placeholder="pcs"
+                                />
+                              </div>
+
+                              {/* Price */}
+                              <div>
+                                <Input
+                                  type="number"
+                                  value={item.price}
+                                  onChange={(e) =>
+                                    handleLineItemChange(index, "price", Number.parseFloat(e.target.value))
+                                  }
+                                  className="h-9 text-right border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                  step="0.01"
+                                  min={0}
+                                  placeholder="0.00"
+                                />
+                              </div>
+
+                              {/* Total */}
+                              <div>
+                                <Input
+                                  value={item.total.toFixed(2)}
+                                  className="h-9 text-right font-semibold bg-gray-50"
+                                  disabled
+                                />
+                              </div>
+
+                              {/* Remove Button */}
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveLineItem(index)}
+                                  className="hover:bg-red-50 hover:text-red-600 transition-colors"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
                           )}
                         </Draggable>
                       ))}
