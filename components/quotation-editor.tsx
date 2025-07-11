@@ -1,476 +1,735 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Plus, Trash2, Upload, FileText, DollarSign, Package, User, Calendar } from "lucide-react"
-import { toast } from "@/hooks/use-toast"
-import { AddItemModal } from "./add-item-modal"
-import { extractTechSpecs, createStructuredLineItems } from "@/lib/tech-spec-extractor"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Trash2, GripVertical, Calendar, User, Building, Mail, Phone, Save, Check } from "lucide-react"
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
+import { calculateTotals } from "@/lib/quotation-utils"
+import { AddItemModal } from "@/components/add-item-modal"
+import { useToast } from "@/hooks/use-toast"
+import type { QuotationData, LineItem } from "@/lib/types"
 
 interface QuotationEditorProps {
-  quotationData: any
-  onQuotationUpdate: (data: any) => void
-  importedRecords?: any[]
+  quotationData: QuotationData
+  onUpdateQuotation: (data: QuotationData) => void
+  onReorderLineItems: (items: LineItem[]) => void
 }
 
-export function QuotationEditor({ quotationData, onQuotationUpdate, importedRecords = [] }: QuotationEditorProps) {
+export function QuotationEditor({ quotationData, onUpdateQuotation, onReorderLineItems }: QuotationEditorProps) {
+  const [editingData, setEditingData] = useState<QuotationData>(quotationData)
   const [showAddItemModal, setShowAddItemModal] = useState(false)
-  const [editingItem, setEditingItem] = useState<any>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const { toast } = useToast()
 
+  // Update editingData when quotationData prop changes
   useEffect(() => {
-    // Auto-import records when they become available
-    if (importedRecords.length > 0 && quotationData.lineItems.length === 0) {
-      handleImportRecords()
-    }
-  }, [importedRecords])
+    setEditingData(quotationData)
+    setHasUnsavedChanges(false)
+  }, [quotationData])
 
-  const handleImportRecords = () => {
-    if (importedRecords.length === 0) {
-      toast({
-        title: "No Records Available",
-        description: "Please import some records first from the Search tab.",
-        variant: "destructive",
-      })
-      return
-    }
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    let updatedData = { ...editingData }
 
-    try {
-      // Extract technical specifications using enhanced NLP
-      const extractedProducts = extractTechSpecs(importedRecords)
+    // Handle nested properties
+    if (name.includes(".")) {
+      const [parent, child] = name.split(".")
 
-      if (extractedProducts.length === 0) {
-        toast({
-          title: "No Products Extracted",
-          description: "Could not extract product information from the imported records.",
-          variant: "destructive",
-        })
+      // Make sure we're only updating valid parent objects
+      if (parent === "customer") {
+        updatedData = {
+          ...editingData,
+          customer: {
+            ...editingData.customer,
+            [child]: value,
+          },
+        }
+      } else {
+        // Handle other potential nested objects here if needed
+        console.warn(`Unhandled nested property: ${name}`)
         return
       }
-
-      // Create structured line items
-      const structuredItems = createStructuredLineItems(extractedProducts)
-
-      // Update quotation data
-      const updatedData = {
-        ...quotationData,
-        lineItems: [...quotationData.lineItems, ...structuredItems],
+    } else {
+      // For top-level properties
+      updatedData = {
+        ...editingData,
+        [name]: value,
       }
+    }
 
-      onQuotationUpdate(updatedData)
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
+
+    // Auto-update the preview with changes
+    onUpdateQuotation(updatedData)
+  }
+
+  const handleLineItemChange = (index: number, field: keyof LineItem, value: string | number) => {
+    const updatedItems = [...editingData.lineItems]
+
+    // Update the specific field
+    updatedItems[index] = {
+      ...updatedItems[index],
+      [field]: value,
+    }
+
+    // If price or quantity changed, recalculate total
+    if (field === "price" || field === "quantity") {
+      const price = field === "price" ? Number(value) : Number(updatedItems[index].price)
+      const quantity = field === "quantity" ? Number(value) : Number(updatedItems[index].quantity)
+      updatedItems[index].total = price * quantity
+    }
+
+    const updatedData = {
+      ...editingData,
+      lineItems: updatedItems,
+    }
+
+    // Recalculate totals
+    const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
+
+    const finalUpdatedData = {
+      ...updatedData,
+      subtotal,
+      markupAmount,
+      totalAmount,
+    }
+
+    setEditingData(finalUpdatedData)
+    setHasUnsavedChanges(true)
+
+    // Auto-update the preview with changes
+    onUpdateQuotation(finalUpdatedData)
+  }
+
+  const handleAddItem = (newItemData: Omit<LineItem, "id" | "no">) => {
+    const newItem: LineItem = {
+      id: `item-${Date.now()}`,
+      no: editingData.lineItems.length + 1,
+      ...newItemData,
+    }
+
+    const updatedItems = [...editingData.lineItems, newItem]
+
+    // Recalculate totals
+    const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
+
+    const updatedData = {
+      ...editingData,
+      lineItems: updatedItems,
+      subtotal,
+      markupAmount,
+      totalAmount,
+    }
+
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
+    onUpdateQuotation(updatedData)
+  }
+
+  const handleRemoveLineItem = (index: number) => {
+    const updatedItems = [...editingData.lineItems]
+    updatedItems.splice(index, 1)
+
+    // Renumber items
+    updatedItems.forEach((item, idx) => {
+      item.no = idx + 1
+    })
+
+    // Recalculate totals
+    const { subtotal, markupAmount, totalAmount } = calculateTotals(updatedItems, editingData.markupRate)
+
+    const updatedData = {
+      ...editingData,
+      lineItems: updatedItems,
+      subtotal,
+      markupAmount,
+      totalAmount,
+    }
+
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
+    onUpdateQuotation(updatedData)
+  }
+
+  const handleDragEnd = (result: any) => {
+    if (!result.destination) return
+
+    const items = Array.from(editingData.lineItems)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
+
+    // Renumber items
+    items.forEach((item, idx) => {
+      item.no = idx + 1
+    })
+
+    const updatedData = {
+      ...editingData,
+      lineItems: items,
+    }
+
+    setEditingData(updatedData)
+    setHasUnsavedChanges(true)
+    onReorderLineItems(items)
+    onUpdateQuotation(updatedData)
+  }
+
+  const handleSave = async () => {
+    setIsSaving(true)
+
+    try {
+      // Simulate save operation
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      onUpdateQuotation(editingData)
+      setHasUnsavedChanges(false)
 
       toast({
-        title: "Records Imported Successfully",
-        description: `Added ${structuredItems.length} items to your quotation with enhanced technical specifications.`,
+        title: "Quotation Saved",
+        description: "Your quotation has been saved successfully.",
       })
     } catch (error) {
-      console.error("Error importing records:", error)
       toast({
-        title: "Import Error",
-        description: "There was an error processing the imported records.",
+        title: "Save Failed",
+        description: "There was an error saving your quotation. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setIsSaving(false)
     }
-  }
-
-  const handleAddItem = (item: any) => {
-    const newItem = {
-      ...item,
-      id: `item-${Date.now()}`,
-      no: quotationData.lineItems.length + 1,
-      total: item.quantity * item.price,
-    }
-
-    const updatedData = {
-      ...quotationData,
-      lineItems: [...quotationData.lineItems, newItem],
-    }
-
-    onQuotationUpdate(updatedData)
-    setShowAddItemModal(false)
-
-    toast({
-      title: "Item Added",
-      description: "New item has been added to your quotation.",
-    })
-  }
-
-  const handleEditItem = (item: any) => {
-    setEditingItem(item)
-    setShowAddItemModal(true)
-  }
-
-  const handleUpdateItem = (updatedItem: any) => {
-    const updatedItems = quotationData.lineItems.map((item: any) =>
-      item.id === updatedItem.id ? { ...updatedItem, total: updatedItem.quantity * updatedItem.price } : item,
-    )
-
-    const updatedData = {
-      ...quotationData,
-      lineItems: updatedItems,
-    }
-
-    onQuotationUpdate(updatedData)
-    setShowAddItemModal(false)
-    setEditingItem(null)
-
-    toast({
-      title: "Item Updated",
-      description: "Item has been updated successfully.",
-    })
-  }
-
-  const handleDeleteItem = (itemId: string) => {
-    const updatedItems = quotationData.lineItems
-      .filter((item: any) => item.id !== itemId)
-      .map((item: any, index: number) => ({ ...item, no: index + 1 }))
-
-    const updatedData = {
-      ...quotationData,
-      lineItems: updatedItems,
-    }
-
-    onQuotationUpdate(updatedData)
-
-    toast({
-      title: "Item Deleted",
-      description: "Item has been removed from your quotation.",
-    })
-  }
-
-  const handleClientInfoChange = (field: string, value: string) => {
-    const updatedData = {
-      ...quotationData,
-      clientInfo: {
-        ...quotationData.clientInfo,
-        [field]: value,
-      },
-    }
-    onQuotationUpdate(updatedData)
-  }
-
-  const handleQuotationDetailsChange = (field: string, value: string) => {
-    const updatedData = {
-      ...quotationData,
-      quotationDetails: {
-        ...quotationData.quotationDetails,
-        [field]: value,
-      },
-    }
-    onQuotationUpdate(updatedData)
-  }
-
-  const handleDescriptionChange = (itemId: string, newDescription: string) => {
-    const updatedItems = quotationData.lineItems.map((item: any) =>
-      item.id === itemId ? { ...item, description: newDescription } : item,
-    )
-
-    const updatedData = {
-      ...quotationData,
-      lineItems: updatedItems,
-    }
-
-    onQuotationUpdate(updatedData)
-  }
-
-  const handleQuantityChange = (itemId: string, newQuantity: number) => {
-    const updatedItems = quotationData.lineItems.map((item: any) =>
-      item.id === itemId ? { ...item, quantity: newQuantity, total: newQuantity * item.price } : item,
-    )
-
-    const updatedData = {
-      ...quotationData,
-      lineItems: updatedItems,
-    }
-
-    onQuotationUpdate(updatedData)
-  }
-
-  const handlePriceChange = (itemId: string, newPrice: number) => {
-    const updatedItems = quotationData.lineItems.map((item: any) =>
-      item.id === itemId ? { ...item, price: newPrice, total: item.quantity * newPrice } : item,
-    )
-
-    const updatedData = {
-      ...quotationData,
-      lineItems: updatedItems,
-    }
-
-    onQuotationUpdate(updatedData)
-  }
-
-  const getTotalAmount = () => {
-    return quotationData.lineItems.reduce((sum: number, item: any) => sum + (item.total || 0), 0)
   }
 
   return (
-    <div className="space-y-6">
-      {/* Import Section */}
-      {importedRecords.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Import Records
-            </CardTitle>
-            <CardDescription>
-              {importedRecords.length} records available for import with enhanced NLP extraction
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={handleImportRecords} className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Import Records as Line Items
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Client Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Client Information
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="clientName">Client Name</Label>
-              <Input
-                id="clientName"
-                value={quotationData.clientInfo.name}
-                onChange={(e) => handleClientInfoChange("name", e.target.value)}
-                placeholder="Client Company Name"
-              />
-            </div>
-            <div>
-              <Label htmlFor="clientEmail">Email</Label>
-              <Input
-                id="clientEmail"
-                type="email"
-                value={quotationData.clientInfo.email}
-                onChange={(e) => handleClientInfoChange("email", e.target.value)}
-                placeholder="client@company.com"
-              />
-            </div>
-            <div>
-              <Label htmlFor="clientPhone">Phone</Label>
-              <Input
-                id="clientPhone"
-                value={quotationData.clientInfo.phone}
-                onChange={(e) => handleClientInfoChange("phone", e.target.value)}
-                placeholder="(555) 123-4567"
-              />
-            </div>
-            <div>
-              <Label htmlFor="clientAddress">Address</Label>
-              <Input
-                id="clientAddress"
-                value={quotationData.clientInfo.address}
-                onChange={(e) => handleClientInfoChange("address", e.target.value)}
-                placeholder="123 Client Street"
-              />
-            </div>
+    <div className="space-y-8 max-w-7xl mx-auto p-6">
+      {/* Header Section with Save Status */}
+      <div className="text-center space-y-2">
+        <h1 className="text-3xl font-bold text-gray-900">Quotation Editor</h1>
+        <p className="text-gray-600">Create and customize your sales quotation</p>
+        {hasUnsavedChanges && (
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
+            <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+            Changes are being auto-saved to preview
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
-      {/* Quotation Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Quotation Details
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="quotationNumber">Quotation Number</Label>
-              <Input
-                id="quotationNumber"
-                value={quotationData.quotationDetails.quotationNumber}
-                onChange={(e) => handleQuotationDetailsChange("quotationNumber", e.target.value)}
-              />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Quotation Details Card */}
+        <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-50 to-indigo-50">
+          <CardHeader className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-lg">
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Quotation Details
+            </CardTitle>
+            <CardDescription className="text-blue-100">Essential information about this quotation</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6 p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="documentNumber" className="text-sm font-semibold text-gray-700">
+                  Document Number *
+                </Label>
+                <Input
+                  id="documentNumber"
+                  name="documentNumber"
+                  value={editingData.documentNumber}
+                  onChange={handleInputChange}
+                  placeholder="e.g., QUO-2024-001"
+                  className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="documentDate" className="text-sm font-semibold text-gray-700">
+                  Document Date *
+                </Label>
+                <Input
+                  id="documentDate"
+                  name="documentDate"
+                  type="date"
+                  value={editingData.documentDate}
+                  onChange={handleInputChange}
+                  className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+                />
+              </div>
             </div>
-            <div>
-              <Label htmlFor="quotationDate">Date</Label>
-              <Input
-                id="quotationDate"
-                type="date"
-                value={quotationData.quotationDetails.date}
-                onChange={(e) => handleQuotationDetailsChange("date", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="validUntil">Valid Until</Label>
+
+            <div className="space-y-2">
+              <Label htmlFor="validUntil" className="text-sm font-semibold text-gray-700">
+                Valid Until *
+              </Label>
               <Input
                 id="validUntil"
+                name="validUntil"
                 type="date"
-                value={quotationData.quotationDetails.validUntil}
-                onChange={(e) => handleQuotationDetailsChange("validUntil", e.target.value)}
+                value={editingData.validUntil}
+                onChange={handleInputChange}
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+              <p className="text-xs text-gray-500">Set the expiration date for this quotation</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="salesEmployee" className="text-sm font-semibold text-gray-700">
+                  Sales Employee
+                </Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="salesEmployee"
+                    name="salesEmployee"
+                    value={editingData.salesEmployee}
+                    onChange={handleInputChange}
+                    placeholder="Enter sales representative name"
+                    className="pl-10 border-2 border-gray-200 focus:border-blue-500 transition-colors"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="currency" className="text-sm font-semibold text-gray-700">
+                  Currency
+                </Label>
+                <Input
+                  id="currency"
+                  name="currency"
+                  value={editingData.currency}
+                  onChange={handleInputChange}
+                  placeholder="e.g., USD, EUR, GBP"
+                  className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="markupRate" className="text-sm font-semibold text-gray-700">
+                Markup Rate (%)
+              </Label>
+              <Input
+                id="markupRate"
+                name="markupRate"
+                type="number"
+                value={editingData.markupRate}
+                onChange={handleInputChange}
+                placeholder="0"
+                min="0"
+                max="100"
+                step="0.1"
+                className="border-2 border-gray-200 focus:border-blue-500 transition-colors"
+              />
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                <p className="text-xs text-amber-800">
+                  <strong>Note:</strong> The markup is applied to the subtotal and is not shown on the final quotation.
+                  It's used for internal pricing calculations only.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Customer Information Card */}
+        <Card className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-50">
+          <CardHeader className="bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-t-lg">
+            <CardTitle className="flex items-center gap-2">
+              <Building className="h-5 w-5" />
+              Customer Information
+            </CardTitle>
+            <CardDescription className="text-green-100">Details about your customer</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6 p-6">
+            <div className="space-y-2">
+              <Label htmlFor="customer.name" className="text-sm font-semibold text-gray-700">
+                Customer Name *
+              </Label>
+              <div className="relative">
+                <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  id="customer.name"
+                  name="customer.name"
+                  value={editingData.customer.name}
+                  onChange={handleInputChange}
+                  placeholder="Enter company or individual name"
+                  className="pl-10 border-2 border-gray-200 focus:border-green-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="customer.address" className="text-sm font-semibold text-gray-700">
+                Address *
+              </Label>
+              <Textarea
+                id="customer.address"
+                name="customer.address"
+                value={editingData.customer.address}
+                onChange={handleInputChange}
+                rows={4}
+                placeholder="Enter complete address including street, city, state, and postal code"
+                className="border-2 border-gray-200 focus:border-green-500 transition-colors resize-none"
               />
             </div>
-          </div>
-          <div>
-            <Label htmlFor="terms">Terms & Conditions</Label>
-            <Textarea
-              id="terms"
-              value={quotationData.quotationDetails.terms}
-              onChange={(e) => handleQuotationDetailsChange("terms", e.target.value)}
-              placeholder="Payment terms and conditions..."
-              rows={3}
-            />
-          </div>
-          <div>
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              value={quotationData.quotationDetails.notes}
-              onChange={(e) => handleQuotationDetailsChange("notes", e.target.value)}
-              placeholder="Additional notes..."
-              rows={3}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Line Items */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Line Items
-              </CardTitle>
-              <CardDescription>Manage your quotation items with detailed descriptions</CardDescription>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="customer.vatNumber" className="text-sm font-semibold text-gray-700">
+                  VAT Number
+                </Label>
+                <Input
+                  id="customer.vatNumber"
+                  name="customer.vatNumber"
+                  value={editingData.customer.vatNumber}
+                  onChange={handleInputChange}
+                  placeholder="e.g., GB123456789"
+                  className="border-2 border-gray-200 focus:border-green-500 transition-colors"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer.tin" className="text-sm font-semibold text-gray-700">
+                  Tax Identification Number
+                </Label>
+                <Input
+                  id="customer.tin"
+                  name="customer.tin"
+                  value={editingData.customer.tin}
+                  onChange={handleInputChange}
+                  placeholder="Enter TIN"
+                  className="border-2 border-gray-200 focus:border-green-500 transition-colors"
+                />
+              </div>
             </div>
-            <Button onClick={() => setShowAddItemModal(true)} className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="customer.phone" className="text-sm font-semibold text-gray-700">
+                  Phone Number
+                </Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="customer.phone"
+                    name="customer.phone"
+                    value={editingData.customer.phone}
+                    onChange={handleInputChange}
+                    placeholder="+1 (555) 123-4567"
+                    className="pl-10 border-2 border-gray-200 focus:border-green-500 transition-colors"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer.email" className="text-sm font-semibold text-gray-700">
+                  Email Address
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="customer.email"
+                    name="customer.email"
+                    type="email"
+                    value={editingData.customer.email}
+                    onChange={handleInputChange}
+                    placeholder="customer@example.com"
+                    className="pl-10 border-2 border-gray-200 focus:border-green-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Line Items Section */}
+      <Card className="shadow-lg border-0">
+        <CardHeader className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-t-lg">
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle className="text-xl">Line Items</CardTitle>
+              <CardDescription className="text-purple-100">Products and services in this quotation</CardDescription>
+            </div>
+            <Button
+              onClick={() => setShowAddItemModal(true)}
+              className="bg-white text-purple-600 hover:bg-purple-50 transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
               Add Item
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          {quotationData.lineItems.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No items added yet</p>
-              <p className="text-sm">Add items manually or import from your records</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {quotationData.lineItems.map((item: any) => (
-                <div key={item.id} className="border rounded-lg p-4 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">#{item.no}</Badge>
-                        {item.brand && <Badge variant="secondary">{item.brand}</Badge>}
-                        {item.category && <Badge variant="outline">{item.category}</Badge>}
-                        {item.confidence && item.confidence < 70 && <Badge variant="destructive">Low Confidence</Badge>}
-                      </div>
 
-                      <div>
-                        <Label htmlFor={`description-${item.id}`}>Description</Label>
-                        <Textarea
-                          id={`description-${item.id}`}
-                          value={item.description}
-                          onChange={(e) => handleDescriptionChange(item.id, e.target.value)}
-                          rows={6}
-                          className="mt-1 font-mono text-sm"
-                        />
+        <CardContent className="p-6">
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="line-items">
+              {(provided) => (
+                <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-4">
+                  {editingData.lineItems.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+                      <div className="space-y-3">
+                        <div className="mx-auto w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+                          <Plus className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-gray-500 font-medium">No items added yet</p>
+                        <p className="text-sm text-gray-400">Click "Add Item" to get started with your quotation</p>
                       </div>
                     </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {editingData.lineItems.map((item, index) => (
+                        <Draggable key={item.id} draggableId={item.id} index={index}>
+                          {(provided, snapshot) => (
+                            <Card
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              className={`transition-all duration-200 ${
+                                snapshot.isDragging ? "shadow-lg scale-105 rotate-2" : "hover:shadow-md"
+                              }`}
+                            >
+                              <CardContent className="p-6">
+                                <div className="flex items-start gap-4">
+                                  {/* Drag Handle */}
+                                  <div {...provided.dragHandleProps} className="cursor-grab hover:cursor-grabbing mt-2">
+                                    <GripVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                                  </div>
 
-                    <div className="flex items-center gap-2 ml-4">
-                      <Button variant="outline" size="sm" onClick={() => handleEditItem(item)}>
-                        Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteItem(item.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
+                                  {/* Item Number */}
+                                  <div className="flex-shrink-0">
+                                    <Label className="text-xs text-gray-500">No.</Label>
+                                    <Input value={item.no} className="w-16 h-8 text-center font-medium" disabled />
+                                  </div>
 
-                  <Separator />
+                                  {/* Main Content */}
+                                  <div className="flex-1 space-y-4">
+                                    {/* Product Info Row */}
+                                    {(item.brand || item.model || item.category) && (
+                                      <div className="flex flex-wrap gap-2">
+                                        {item.brand && <Badge variant="secondary">{item.brand}</Badge>}
+                                        {item.model && <Badge variant="outline">{item.model}</Badge>}
+                                        {item.category && <Badge variant="default">{item.category}</Badge>}
+                                      </div>
+                                    )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                      <Label htmlFor={`quantity-${item.id}`}>Quantity</Label>
-                      <Input
-                        id={`quantity-${item.id}`}
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => handleQuantityChange(item.id, Number(e.target.value))}
-                        className="mt-1"
-                      />
+                                    {/* Description */}
+                                    <div className="space-y-2">
+                                      <Label className="text-sm font-semibold">Description</Label>
+                                      <Textarea
+                                        value={item.description}
+                                        onChange={(e) => handleLineItemChange(index, "description", e.target.value)}
+                                        className="min-h-[120px] resize-none border-2 border-gray-200 focus:border-purple-500 transition-colors font-mono text-sm leading-relaxed"
+                                        placeholder="Enter detailed description of the product or service"
+                                        rows={6}
+                                      />
+                                    </div>
+
+                                    {/* Quantity, Unit, Price Row */}
+                                    <div className="grid grid-cols-4 gap-4">
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Quantity</Label>
+                                        <Input
+                                          type="number"
+                                          value={item.quantity}
+                                          onChange={(e) =>
+                                            handleLineItemChange(index, "quantity", Number.parseInt(e.target.value))
+                                          }
+                                          className="h-8 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                          min={1}
+                                          placeholder="1"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Unit</Label>
+                                        <Input
+                                          value={item.unit}
+                                          onChange={(e) => handleLineItemChange(index, "unit", e.target.value)}
+                                          className="h-8 text-center border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                          placeholder="pcs"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Price</Label>
+                                        <Input
+                                          type="number"
+                                          value={item.price}
+                                          onChange={(e) =>
+                                            handleLineItemChange(index, "price", Number.parseFloat(e.target.value))
+                                          }
+                                          className="h-8 text-right border-2 border-gray-200 focus:border-purple-500 transition-colors"
+                                          step="0.01"
+                                          min={0}
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Total</Label>
+                                        <Input
+                                          value={item.total.toFixed(2)}
+                                          className="h-8 text-right font-semibold bg-gray-50"
+                                          disabled
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Remove Button */}
+                                  <div className="flex-shrink-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRemoveLineItem(index)}
+                                      className="hover:bg-red-50 hover:text-red-600 transition-colors"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
                     </div>
-                    <div>
-                      <Label htmlFor={`unit-${item.id}`}>Unit</Label>
-                      <Input id={`unit-${item.id}`} value={item.unit} readOnly className="mt-1" />
-                    </div>
-                    <div>
-                      <Label htmlFor={`price-${item.id}`}>Unit Price</Label>
-                      <div className="relative mt-1">
-                        <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id={`price-${item.id}`}
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.price}
-                          onChange={(e) => handlePriceChange(item.id, Number(e.target.value))}
-                          className="pl-10"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Total</Label>
-                      <div className="mt-1 p-2 bg-muted rounded-md font-semibold">${item.total.toFixed(2)}</div>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ))}
+              )}
+            </Droppable>
+          </DragDropContext>
 
-              <Separator />
-
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <div className="text-lg font-semibold">Total Amount: ${getTotalAmount().toFixed(2)}</div>
-                  <div className="text-sm text-muted-foreground">{quotationData.lineItems.length} item(s)</div>
+          {editingData.lineItems.length > 0 && (
+            <div className="mt-8 flex justify-end">
+              <div className="w-80 space-y-3 bg-gray-50 p-6 rounded-lg">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span className="font-semibold">
+                    {editingData.currency} {editingData.subtotal.toFixed(2)}
+                  </span>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-lg">
+                  <span className="font-semibold text-gray-800">Total Amount:</span>
+                  <span className="font-bold text-purple-600">
+                    {editingData.currency} {editingData.totalAmount.toFixed(2)}
+                  </span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {editingData.lineItems.length > 0 && (
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-md p-4">
+              <p className="text-xs text-blue-800">
+                <strong>Pricing Note:</strong> The prices shown are base prices before markup. A markup of{" "}
+                {editingData.markupRate}% is applied to the subtotal to calculate the final total amount.
+              </p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Add/Edit Item Modal */}
-      {showAddItemModal && (
-        <AddItemModal
-          item={editingItem}
-          onSave={editingItem ? handleUpdateItem : handleAddItem}
-          onCancel={() => {
-            setShowAddItemModal(false)
-            setEditingItem(null)
-          }}
-        />
-      )}
+      {/* Additional Information Section */}
+      <Card className="shadow-lg border-0">
+        <CardHeader className="bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-t-lg">
+          <CardTitle>Additional Information</CardTitle>
+          <CardDescription className="text-orange-100">Notes, terms, and payment details</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 p-6">
+          <div className="space-y-2">
+            <Label htmlFor="notes" className="text-sm font-semibold text-gray-700">
+              Notes
+            </Label>
+            <Textarea
+              id="notes"
+              name="notes"
+              value={editingData.notes}
+              onChange={handleInputChange}
+              rows={4}
+              placeholder="Add any additional notes about the products, services, or special instructions..."
+              className="border-2 border-gray-200 focus:border-orange-500 transition-colors resize-none"
+            />
+            <p className="text-xs text-gray-500">These notes will appear on the quotation</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="termsAndConditions" className="text-sm font-semibold text-gray-700">
+              Terms and Conditions
+            </Label>
+            <Textarea
+              id="termsAndConditions"
+              name="termsAndConditions"
+              value={editingData.termsAndConditions}
+              onChange={handleInputChange}
+              rows={6}
+              placeholder="Enter your standard terms and conditions, payment terms, delivery conditions, etc..."
+              className="border-2 border-gray-200 focus:border-orange-500 transition-colors resize-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="remarks" className="text-sm font-semibold text-gray-700">
+              Remarks
+            </Label>
+            <Textarea
+              id="remarks"
+              name="remarks"
+              value={editingData.remarks}
+              onChange={handleInputChange}
+              rows={3}
+              placeholder="Any additional remarks or special conditions..."
+              className="border-2 border-gray-200 focus:border-orange-500 transition-colors resize-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="bankDetails" className="text-sm font-semibold text-gray-700">
+              Bank Details
+            </Label>
+            <Textarea
+              id="bankDetails"
+              name="bankDetails"
+              value={editingData.bankDetails}
+              onChange={handleInputChange}
+              rows={5}
+              placeholder="Enter your bank account details for payment processing..."
+              className="border-2 border-gray-200 focus:border-orange-500 transition-colors resize-none"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Save Button */}
+      <div className="flex justify-center pt-6">
+        <Button
+          size="lg"
+          onClick={handleSave}
+          disabled={isSaving}
+          className="px-12 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+        >
+          {isSaving ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Saving...
+            </>
+          ) : hasUnsavedChanges ? (
+            <>
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </>
+          ) : (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Saved
+            </>
+          )}
+        </Button>
+      </div>
+
+      <AddItemModal isOpen={showAddItemModal} onClose={() => setShowAddItemModal(false)} onAddItem={handleAddItem} />
     </div>
   )
 }
