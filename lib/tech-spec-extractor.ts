@@ -534,10 +534,29 @@ function capitalizeFirst(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
+// Specification display names for better formatting
+const SPEC_DISPLAY_NAMES: { [key: string]: string } = {
+  display: "Display",
+  processor: "Processor",
+  storage: "Storage",
+  graphics: "Graphics",
+  connectivity: "Connectivity",
+  security: "Security",
+  battery: "Battery",
+  memory: "Memory",
+  camera: "Camera",
+  audio: "Audio",
+  dimensions: "Dimensions",
+  weight: "Weight",
+  operatingSystem: "Operating System",
+  ports: "Ports",
+  wireless: "Wireless",
+}
+
 // Enhanced function to create structured line items from extracted products
 export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
   return products.map((product, index) => {
-    // Create a clean, concise description
+    // Create a comprehensive description with all specifications
     let description = ""
 
     // Product title (brand + name/model)
@@ -547,15 +566,75 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
     else if (product.model) titleParts.push(product.model)
 
     if (titleParts.length > 0) {
-      description = titleParts.join(" ")
+      description += titleParts.join(" ")
+    } else {
+      // Fallback title
+      description += product.category || "Product"
     }
 
-    // Fallback if no meaningful description
-    if (!description.trim()) {
-      description = `${product.brand || ""} ${product.name || product.model || "Product"}`.trim()
-      if (product.category) {
-        description += ` - ${product.category}`
+    // Add category if available and not already in title
+    if (product.category && !description.toLowerCase().includes(product.category.toLowerCase())) {
+      description += ` - ${product.category}`
+    }
+
+    // Add all technical specifications
+    const specs = Object.entries(product.specs).filter(([_, value]) => value && value.trim())
+
+    if (specs.length > 0) {
+      description += "\n\nTechnical Specifications:"
+
+      // Group specifications by priority for better organization
+      const priorityOrder = [
+        "display",
+        "processor",
+        "memory",
+        "storage",
+        "graphics",
+        "operatingSystem",
+        "battery",
+        "connectivity",
+        "wireless",
+        "ports",
+        "camera",
+        "audio",
+        "security",
+        "dimensions",
+        "weight",
+      ]
+
+      // Add priority specs first
+      const addedSpecs = new Set<string>()
+      for (const specKey of priorityOrder) {
+        if (product.specs[specKey] && !addedSpecs.has(specKey)) {
+          const displayName = SPEC_DISPLAY_NAMES[specKey] || capitalizeFirst(specKey)
+          const value = product.specs[specKey]!.trim()
+          description += `\n• ${displayName}: ${value}`
+          addedSpecs.add(specKey)
+        }
       }
+
+      // Add any remaining specs that weren't in the priority list
+      for (const [specKey, value] of specs) {
+        if (!addedSpecs.has(specKey) && value) {
+          const displayName = SPEC_DISPLAY_NAMES[specKey] || capitalizeFirst(specKey.replace(/([A-Z])/g, " $1"))
+          description += `\n• ${displayName}: ${value.trim()}`
+        }
+      }
+    }
+
+    // Add custom description if it exists and adds value
+    if (
+      product.description &&
+      product.description.length > 10 &&
+      !description.toLowerCase().includes(product.description.toLowerCase().substring(0, 50))
+    ) {
+      description += `\n\nAdditional Information:\n${product.description}`
+    }
+
+    // Add price information if available
+    if (product.price) {
+      const currency = product.currency || "USD"
+      description += `\n\nPrice: ${currency} ${product.price.toFixed(2)}`
     }
 
     return {
