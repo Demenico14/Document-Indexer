@@ -157,6 +157,13 @@ const MODEL_PATTERNS = [
   /\b([a-z]+\d+[a-z]*|\d+[a-z]+\d*)\b/i,
 ]
 
+// Enhanced price extraction patterns
+const PRICE_PATTERNS = [
+  /(?:price|cost|amount|total|msrp|retail|selling)\s*:?\s*([€$£¥]?\s*[\d,]+\.?\d*)\s*([€$£¥]|usd|eur|gbp|jpy)?/i,
+  /([€$£¥])\s*([\d,]+\.?\d*)/i,
+  /([\d,]+\.?\d*)\s*(usd|eur|gbp|jpy|dollars?|euros?|pounds?)/i,
+]
+
 export function extractTechSpecs(records: any[]): ExtractedProduct[] {
   const products: ExtractedProduct[] = []
   const productGroups = groupRecordsByProduct(records)
@@ -200,8 +207,8 @@ function analyzeProductGroup(records: any[]): ExtractedProduct | null {
   // Extract technical specifications with improved logic
   extractSpecificationsAdvanced(product.specs, records, allText)
 
-  // Extract price information
-  extractPriceInfo(product, records)
+  // Extract price information with enhanced patterns
+  extractPriceInfoAdvanced(product, records, allText)
 
   // Post-process and clean up
   cleanupProductData(product)
@@ -478,30 +485,130 @@ function cleanSpecValue(value: string, specKey: string): string {
   return cleaned
 }
 
-function extractPriceInfo(product: ExtractedProduct, records: any[]) {
-  const priceKeywords = ["price", "cost", "amount", "total", "msrp", "retail"]
-
+function extractPriceInfoAdvanced(product: ExtractedProduct, records: any[], allText: string) {
+  // Try to extract price from individual records first
   for (const record of records) {
     const fieldName = record.fieldName?.toLowerCase() || ""
     const fieldValue = record.fieldValue?.toString() || ""
+    const combinedText = `${fieldName} ${fieldValue}`
 
-    if (priceKeywords.some((keyword) => fieldName.includes(keyword))) {
-      // Try to extract numeric price
-      const priceMatch = fieldValue.match(/[\d,]+\.?\d*/)
-      if (priceMatch) {
-        const price = Number.parseFloat(priceMatch[0].replace(/,/g, ""))
-        if (!isNaN(price) && price > 0) {
-          product.price = price
+    // Check if this field is likely to contain price information
+    const priceKeywords = ["price", "cost", "amount", "total", "msrp", "retail", "selling", "value"]
+    const isPriceField = priceKeywords.some((keyword) => fieldName.includes(keyword))
+
+    if (isPriceField || fieldValue.match(/[€$£¥]/)) {
+      // Try to extract price using patterns
+      for (const pattern of PRICE_PATTERNS) {
+        const match = combinedText.match(pattern)
+        if (match) {
+          let priceValue = ""
+          let currencyValue = ""
+
+          if (match[1] && match[2]) {
+            // Pattern with currency symbol and amount
+            if (match[1].match(/[€$£¥]/)) {
+              currencyValue = match[1]
+              priceValue = match[2]
+            } else {
+              priceValue = match[1]
+              currencyValue = match[2]
+            }
+          } else if (match[1]) {
+            priceValue = match[1].replace(/[€$£¥]/g, "")
+            const currencyMatch = match[0].match(/[€$£¥]|usd|eur|gbp|jpy/i)
+            if (currencyMatch) {
+              currencyValue = currencyMatch[0]
+            }
+          }
+
+          // Clean and parse the price
+          if (priceValue) {
+            const cleanPrice = priceValue.replace(/[,\s]/g, "")
+            const price = Number.parseFloat(cleanPrice)
+
+            if (!isNaN(price) && price > 0) {
+              product.price = price
+
+              // Set currency
+              if (currencyValue) {
+                const currency = normalizeCurrency(currencyValue)
+                if (currency) {
+                  product.currency = currency
+                }
+              }
+              return // Found price, exit early
+            }
+          }
         }
-      }
-
-      // Try to extract currency
-      const currencyMatch = fieldValue.match(/\$|€|£|¥|USD|EUR|GBP|JPY/i)
-      if (currencyMatch) {
-        product.currency = currencyMatch[0].toUpperCase()
       }
     }
   }
+
+  // If no price found in individual records, try the combined text
+  if (!product.price) {
+    for (const pattern of PRICE_PATTERNS) {
+      const match = allText.match(pattern)
+      if (match) {
+        let priceValue = ""
+        let currencyValue = ""
+
+        if (match[1] && match[2]) {
+          if (match[1].match(/[€$£¥]/)) {
+            currencyValue = match[1]
+            priceValue = match[2]
+          } else {
+            priceValue = match[1]
+            currencyValue = match[2]
+          }
+        } else if (match[1]) {
+          priceValue = match[1].replace(/[€$£¥]/g, "")
+          const currencyMatch = match[0].match(/[€$£¥]|usd|eur|gbp|jpy/i)
+          if (currencyMatch) {
+            currencyValue = currencyMatch[0]
+          }
+        }
+
+        if (priceValue) {
+          const cleanPrice = priceValue.replace(/[,\s]/g, "")
+          const price = Number.parseFloat(cleanPrice)
+
+          if (!isNaN(price) && price > 0) {
+            product.price = price
+
+            if (currencyValue) {
+              const currency = normalizeCurrency(currencyValue)
+              if (currency) {
+                product.currency = currency
+              }
+            }
+            break
+          }
+        }
+      }
+    }
+  }
+}
+
+function normalizeCurrency(currency: string): string {
+  const currencyMap: { [key: string]: string } = {
+    $: "USD",
+    "€": "EUR",
+    "£": "GBP",
+    "¥": "JPY",
+    usd: "USD",
+    eur: "EUR",
+    gbp: "GBP",
+    jpy: "JPY",
+    dollar: "USD",
+    dollars: "USD",
+    euro: "EUR",
+    euros: "EUR",
+    pound: "GBP",
+    pounds: "GBP",
+  }
+
+  const normalized = currencyMap[currency.toLowerCase()]
+  return normalized || currency.toUpperCase()
 }
 
 function cleanupProductData(product: ExtractedProduct) {
@@ -511,18 +618,6 @@ function cleanupProductData(product: ExtractedProduct) {
       delete product.specs[key]
     }
   })
-
-  // Generate description from specs if missing
-  if (!product.description && Object.keys(product.specs).length > 0) {
-    const specEntries = Object.entries(product.specs)
-      .filter(([_, value]) => value && value.length < 100)
-      .slice(0, 5)
-      .map(([key, value]) => `${capitalizeFirst(key)}: ${value}`)
-
-    if (specEntries.length > 0) {
-      product.description = specEntries.join("\n")
-    }
-  }
 
   // Set default currency if price exists but no currency
   if (product.price && !product.currency) {
@@ -556,7 +651,7 @@ const SPEC_DISPLAY_NAMES: { [key: string]: string } = {
 // Enhanced function to create structured line items from extracted products
 export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
   return products.map((product, index) => {
-    // Create a comprehensive description with all specifications
+    // Create a clean, readable description
     let description = ""
 
     // Product title (brand + name/model)
@@ -566,7 +661,7 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
     else if (product.model) titleParts.push(product.model)
 
     if (titleParts.length > 0) {
-      description += titleParts.join(" ")
+      description += `${titleParts.join(" ")}`
     } else {
       // Fallback title
       description += product.category || "Product"
@@ -577,11 +672,11 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
       description += ` - ${product.category}`
     }
 
-    // Add all technical specifications
+    // Add all technical specifications in a clean, readable format
     const specs = Object.entries(product.specs).filter(([_, value]) => value && value.trim())
 
     if (specs.length > 0) {
-      description += "\n\nTechnical Specifications:"
+      description += "\n\n━━━ TECHNICAL SPECIFICATIONS ━━━"
 
       // Group specifications by priority for better organization
       const priorityOrder = [
@@ -608,7 +703,7 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
         if (product.specs[specKey] && !addedSpecs.has(specKey)) {
           const displayName = SPEC_DISPLAY_NAMES[specKey] || capitalizeFirst(specKey)
           const value = product.specs[specKey]!.trim()
-          description += `\n• ${displayName}: ${value}`
+          description += `\n▸ ${displayName}: ${value}`
           addedSpecs.add(specKey)
         }
       }
@@ -617,7 +712,7 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
       for (const [specKey, value] of specs) {
         if (!addedSpecs.has(specKey) && value) {
           const displayName = SPEC_DISPLAY_NAMES[specKey] || capitalizeFirst(specKey.replace(/([A-Z])/g, " $1"))
-          description += `\n• ${displayName}: ${value.trim()}`
+          description += `\n▸ ${displayName}: ${value.trim()}`
         }
       }
     }
@@ -628,13 +723,7 @@ export function createStructuredLineItems(products: ExtractedProduct[]): any[] {
       product.description.length > 10 &&
       !description.toLowerCase().includes(product.description.toLowerCase().substring(0, 50))
     ) {
-      description += `\n\nAdditional Information:\n${product.description}`
-    }
-
-    // Add price information if available
-    if (product.price) {
-      const currency = product.currency || "USD"
-      description += `\n\nPrice: ${currency} ${product.price.toFixed(2)}`
+      description += `\n\n━━━ ADDITIONAL INFORMATION ━━━\n${product.description}`
     }
 
     return {
